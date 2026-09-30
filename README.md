@@ -1,6 +1,6 @@
 # Empower Personal Dashboard (`empower-personal-dashboard`)
 
-[![CI](https://github.com/don-petry/empower-personal-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/don-petry/empower-personal-dashboard/actions/workflows/ci.yml)
+[![CI](https://github.com/petry-projects/empower-personal-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/petry-projects/empower-personal-dashboard/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -48,14 +48,14 @@ This library provides full programmatic and CLI access to:
 
 ```bash
 # Clone and install locally in editable mode
-git clone https://github.com/don-petry/empower-personal-dashboard.git
+git clone https://github.com/petry-projects/empower-personal-dashboard.git
 cd empower-personal-dashboard
 pip install -e .
 ```
 
 Or install directly from GitHub:
 ```bash
-pip install git+https://github.com/don-petry/empower-personal-dashboard.git
+pip install git+https://github.com/petry-projects/empower-personal-dashboard.git
 ```
 
 ---
@@ -268,7 +268,7 @@ sequenceDiagram
 
 ```bash
 # Clone the repository
-git clone https://github.com/don-petry/empower-personal-dashboard.git
+git clone https://github.com/petry-projects/empower-personal-dashboard.git
 cd empower-personal-dashboard
 
 # Install in editable mode with development dependencies

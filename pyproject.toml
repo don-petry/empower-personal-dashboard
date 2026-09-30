@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
-    { name = "Don Petry", email = "donpetry@gmail.com" }
+    { name = "Don Petry" }
 ]
 keywords = [
     "empower",
@@ -58,10 +58,10 @@ empower = "empower_personal_dashboard.cli:main"
 empower-mcp = "empower_personal_dashboard.mcp_server:main"
 
 [project.urls]
-Homepage = "https://github.com/don-petry/empower-personal-dashboard"
-Documentation = "https://github.com/don-petry/empower-personal-dashboard#readme"
-Issues = "https://github.com/don-petry/empower-personal-dashboard/issues"
-Repository = "https://github.com/don-petry/empower-personal-dashboard.git"
+Homepage = "https://github.com/petry-projects/empower-personal-dashboard"
+Documentation = "https://github.com/petry-projects/empower-personal-dashboard#readme"
+Issues = "https://github.com/petry-projects/empower-personal-dashboard/issues"
+Repository = "https://github.com/petry-projects/empower-personal-dashboard.git"
 
 [tool.setuptools.packages.find]
 where = ["."]
