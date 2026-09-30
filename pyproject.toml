@@ -7,7 +7,7 @@ name = "empower-personal-dashboard"
 version = "0.1.0"
 description = "Python client and CLI for Empower Personal Dashboard (formerly Personal Capital) with 2FA, session persistence, holdings, and transactions."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.9"
 authors = [
     { name = "Don Petry", email = "donpetry@gmail.com" }
@@ -27,7 +27,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Financial and Insurance Industry",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
