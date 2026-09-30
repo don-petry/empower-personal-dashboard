@@ -3,6 +3,8 @@
 [![CI](https://github.com/don-petry/empower-personal-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/don-petry/empower-personal-dashboard/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Privacy: Zero-PII](https://img.shields.io/badge/privacy-Zero--PII-success.svg)](AGENTS.md#2-zero-pii--privacy-strict-mandate)
 
 A standalone, modern Python client and CLI for **Empower Personal Dashboard** (formerly **Personal Capital**).
 
@@ -16,6 +18,25 @@ This library provides full programmatic and CLI access to:
 * **Unified Migration Awareness**: Automatic detection and transparent routing for accounts migrated to Empower's unified API endpoint (`pc-api.empower-retirement.com`).
 * **Text Sanitization**: Built-in stripping of Unicode replacement characters (`\ufffd`) often injected by upstream broker feeds.
 * **Zero External Dependencies**: Pure Python built only on standard `requests`.
+
+---
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Quickstart CLI](#quickstart-cli)
+  - [1. One-Time Setup (2FA Authentication & Device Binding)](#1-one-time-setup-2fa-authentication--device-binding)
+  - [2. Unattended Data Extraction](#2-unattended-data-extraction)
+  - [3. Offline Sandbox Mode](#3-offline-sandbox-mode)
+- [Python API Usage](#python-api-usage)
+  - [Extract Balances & Net Worth](#extract-balances--net-worth)
+  - [Extract Investment Holdings](#extract-investment-holdings)
+  - [Extract Transactions](#extract-transactions)
+- [Architecture & Authentication Lifecycle](#architecture--authentication-lifecycle)
+- [Security & Privacy Model](#security--privacy-model)
+- [Development & Testing](#development--testing)
+- [Contributing & Agent Standards](#contributing--agent-standards)
+- [License](#license)
 
 ---
 
@@ -168,11 +189,39 @@ sequenceDiagram
 
 ---
 
-## Security & Best Practices
+## Security & Privacy Model
 
-1. **Owner-Only Session Storage**: Saved session tokens are written using atomic temporary files and restricted POSIX file permissions (`0600`).
-2. **Secret Redaction**: When running in `--debug` mode or with logging enabled, passwords, pins, and 2FA verification codes are automatically masked (`***REDACTED***`).
-3. **No Credential Storage**: The client does not store your account password; it persists only the session cookies and CSRF token generated upon device binding.
+1. **Zero-PII Commitment**: All test suites, mock fixtures, and sample documentation use 100% synthetic financial records. Real user names, balances, account numbers, and transaction descriptions are never stored or committed.
+2. **Owner-Only Session Storage**: Saved session tokens are written using atomic temporary files with restricted POSIX file permissions (`0600`).
+3. **Secret Redaction**: When running in `--debug` mode or with logging enabled, passwords, pins, and 2FA verification codes are automatically masked (`***REDACTED***`).
+4. **No Password Storage**: The client does not store your account password; it persists only the session cookies and CSRF token generated upon device binding.
+
+---
+
+## Development & Testing
+
+```bash
+# Clone the repository
+git clone https://github.com/don-petry/empower-personal-dashboard.git
+cd empower-personal-dashboard
+
+# Install in editable mode with development dependencies
+pip install -e ".[dev]"
+
+# Run unit tests (offline, deterministic)
+PYTHONPATH=. python3 -m unittest discover tests
+
+# Verify syntax and byte compilation
+python3 -m compileall empower_personal_dashboard tests
+```
+
+---
+
+## Contributing & Agent Standards
+
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**: Guidelines for opening issues, reporting API changes, coding conventions, and pull request workflows.
+- **[AGENTS.md](AGENTS.md)**: Canonical development standards, Test-Driven Development (TDD) rules, and security guidelines for AI coding agents (extending [`petry-projects/.github/AGENTS.md`](https://github.com/petry-projects/.github/blob/main/AGENTS.md)).
+- **[CLAUDE.md](CLAUDE.md)**: Agent instructions for Claude Code.
 
 ---
 
