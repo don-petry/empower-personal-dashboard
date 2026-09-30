@@ -23,12 +23,14 @@ empower-personal-dashboard/
 │   ├── models.py             # Strongly typed dataclasses for financial payloads
 │   ├── sanitizers.py         # Unicode text sanitization (\ufffd stripping, normalization)
 │   ├── exceptions.py         # Domain error hierarchy (EmpowerError, 2FA, SessionExpired)
-│   └── cli.py                # Command-line interface with formatted tables, JSON, CSV
+│   ├── cli.py                # Command-line interface with formatted tables, JSON, CSV
+│   └── mcp_server.py         # Model Context Protocol (FastMCP) server with tools & resources
 ├── tests/
 │   ├── test_client.py        # Offline client unit tests (mocked endpoints)
 │   ├── test_models.py        # Dataclass parsing and aggregation logic
 │   ├── test_sanitizers.py    # Unicode replacement and whitespace cleaning
-│   └── test_cli.py           # CLI invocation, formatting, and sandbox tests
+│   ├── test_cli.py           # CLI invocation, formatting, and sandbox tests
+│   └── test_mcp_server.py    # FastMCP tools, error handling, and caching tests
 ├── pyproject.toml            # PEP 621 build configuration with SPDX MIT license
 └── requirements.txt          # Minimal runtime dependencies (requests>=2.28.0)
 ```

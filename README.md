@@ -32,6 +32,10 @@ This library provides full programmatic and CLI access to:
   - [Extract Balances & Net Worth](#extract-balances--net-worth)
   - [Extract Investment Holdings](#extract-investment-holdings)
   - [Extract Transactions](#extract-transactions)
+- [Model Context Protocol (MCP) Server](#model-context-protocol-mcp-server)
+  - [Installation with MCP Support](#installation-with-mcp-support)
+  - [Configuration for AI Agents](#configuration-for-ai-agents)
+  - [MCP Tools & Resources](#mcp-tools--resources)
 - [Architecture & Authentication Lifecycle](#architecture--authentication-lifecycle)
 - [Security & Privacy Model](#security--privacy-model)
 - [Development & Testing](#development--testing)
@@ -142,6 +146,68 @@ print(f"Net Cashflow: ${transactions.net_cashflow:,.2f}")
 for tx in transactions.transactions[:10]:
     sign = "+" if tx["is_credit"] or tx["is_cash_in"] else "-"
     print(f"  {tx['transaction_date']} | {tx['account_name'][:20]:<20} | {tx['description'][:30]:<30} | {sign}${tx['amount']:,.2f}")
+```
+
+---
+
+## Model Context Protocol (MCP) Server
+
+Connect your Empower Personal Dashboard to AI agents (**Claude Desktop, Antigravity CLI, Cursor, Windsurf, Claude Code**) via the **Model Context Protocol (MCP)**.
+
+### Installation with MCP Support
+
+```bash
+pip install "empower-personal-dashboard[mcp]"
+```
+
+Or run directly without installation via `uvx`:
+```bash
+uvx --from "empower-personal-dashboard[mcp]" empower-mcp
+```
+
+### Configuration for AI Agents
+
+#### 1. Claude Desktop (`claude_desktop_config.json`)
+```json
+{
+  "mcpServers": {
+    "empower": {
+      "command": "empower-mcp"
+    }
+  }
+}
+```
+
+#### 2. Antigravity CLI / Cursor / VS Code (`mcp.json`)
+```json
+{
+  "mcpServers": {
+    "empower": {
+      "command": "python3",
+      "args": ["-m", "empower_personal_dashboard.mcp_server"]
+    }
+  }
+}
+```
+
+### MCP Tools & Resources
+
+| Tool | Parameters | Description |
+| :--- | :--- | :--- |
+| `get_net_worth_summary` | None | Ultra-lightweight summary (net worth, cash, investments, credit/debt, loans) minimizing LLM context (~100 tokens). |
+| `get_balances` | `account_types`, `include_inactive` | Per-account balances grouped by type (`CASH`, `INVESTMENT`, `CREDIT`, etc.) with masked account numbers. |
+| `get_holdings` | `ticker`, `account_id`, `limit` | Security-level positions, quantities, prices, cost basis, and percentage allocations. |
+| `get_transactions` | `start_date`, `end_date`, `account_id`, `category`, `limit` | Historical transactions filtered by date range or category with pagination caps. |
+| `check_auth_status` | None | Health check verifying that local session authentication is active. |
+
+* **Resources:** `empower://balances/summary`, `empower://holdings/portfolio`, `empower://accounts/list`
+* **Prompts:** `portfolio_review` (audits asset allocation and cash drag), `spending_audit` (analyzes monthly burn rate)
+
+### Testing in Offline Sandbox Mode
+
+Test the MCP server without credentials or network calls:
+```bash
+empower-mcp --sandbox
 ```
 
 ---

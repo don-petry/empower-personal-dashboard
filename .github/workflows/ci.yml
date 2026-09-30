@@ -33,7 +33,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -e .
+          pip install -e ".[mcp]"
       - name: Compile sources
         run: python -m compileall empower_personal_dashboard tests
       - name: Run unit test suite
