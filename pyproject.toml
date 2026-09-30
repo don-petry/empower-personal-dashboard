@@ -41,14 +41,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mcp = [
+    "mcp>=1.2.0; python_version >= '3.10'",
+]
 dev = [
     "pytest>=8.0",
     "build>=1.0",
     "twine>=5.0",
 ]
+all = [
+    "empower-personal-dashboard[mcp,dev]",
+]
 
 [project.scripts]
 empower = "empower_personal_dashboard.cli:main"
+empower-mcp = "empower_personal_dashboard.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/don-petry/empower-personal-dashboard"

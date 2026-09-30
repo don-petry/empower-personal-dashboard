@@ -28,6 +28,12 @@ from .sanitizers import clean_api_text
 
 __version__ = "0.1.0"
 
+def create_mcp_server(*args, **kwargs):
+    """Lazy loader for creating the FastMCP server instance."""
+    from .mcp_server import create_mcp_server as _create_server
+    return _create_server(*args, **kwargs)
+
+
 __all__ = [
     "EmpowerDashboardClient",
     "AccountBalance",
@@ -44,4 +50,6 @@ __all__ = [
     "DEFAULT_BASE_URL",
     "MIGRATED_BASE_URL",
     "DEFAULT_SESSION_FILE",
+    "create_mcp_server",
 ]
+
