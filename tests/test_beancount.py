@@ -6,6 +6,7 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from empower_personal_dashboard.models import (
     AccountBalance,
@@ -158,6 +159,16 @@ regex_rules:
             is_income=True,
         )
         self.assertEqual(income, "Income:Uncategorized")
+
+    def test_yaml_mapping_without_pyyaml(self):
+        with patch.dict("sys.modules", {"yaml": None}):
+            mapper = BeancountMapper(mapping_path=self.map_file)
+            acct = mapper.resolve_account("Chase", "Chase - Freedom Unlimited", "9999", "credit")
+            self.assertEqual(acct, "Liabilities:Chase:Freedom")
+            cat = mapper.resolve_category_or_payee("Groceries", "Any Store", True, False)
+            self.assertEqual(cat, "Expenses:Food:Groceries")
+            regex_acct = mapper.resolve_category_or_payee("Other", "WHOLE FOODS #1023", True, False)
+            self.assertEqual(regex_acct, "Expenses:Food:Groceries")
 
 
 class TestBeancountGenerator(unittest.TestCase):

@@ -95,6 +95,53 @@ def slugify_account_name(
     return candidate
 
 
+def _parse_simple_yaml(content: str) -> Dict[str, Any]:
+    """Lightweight fallback parser for basic YAML mapping files when PyYAML is not installed."""
+    result: Dict[str, Any] = {"accounts": {}, "categories": {}, "regex_rules": []}
+    current_section = None
+    current_rule: Dict[str, str] = {}
+
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        # Check section header
+        if line.endswith(":") and not line.startswith("-"):
+            if current_rule and "pattern" in current_rule and "account" in current_rule:
+                result["regex_rules"].append(current_rule)
+                current_rule = {}
+            current_section = line[:-1].strip().lower()
+            continue
+
+        if current_section in ("accounts", "categories"):
+            parts = line.split(":", 1)
+            if len(parts) == 2:
+                k = parts[0].strip().strip('"').strip("'")
+                v = parts[1].strip().strip('"').strip("'")
+                if k and v:
+                    result[current_section][k] = v
+
+        elif current_section in ("regex_rules", "regex_payee_rules"):
+            if line.startswith("-"):
+                if current_rule and "pattern" in current_rule and "account" in current_rule:
+                    result["regex_rules"].append(current_rule)
+                current_rule = {}
+                line = line[1:].strip()
+
+            parts = line.split(":", 1)
+            if len(parts) == 2:
+                k = parts[0].strip().lower()
+                v = parts[1].strip().strip('"').strip("'")
+                if k in ("pattern", "account") and v:
+                    current_rule[k] = v
+
+    if current_rule and "pattern" in current_rule and "account" in current_rule:
+        result["regex_rules"].append(current_rule)
+
+    return result
+
+
 class BeancountMapper:
     """Handles mapping of Empower accounts, categories, and payee rules to Beancount accounts."""
 
@@ -122,16 +169,11 @@ class BeancountMapper:
 
             data = yaml.safe_load(content) or {}
         except ImportError:
-            # Fallback to JSON parsing if PyYAML is not installed
+            # Fallback to JSON parsing or lightweight simple YAML parser
             try:
                 data = json.loads(content)
-            except Exception as e:
-                logger.warning(
-                    "PyYAML is not installed and mapping file is not valid JSON. "
-                    "Install 'pyyaml' to use YAML mapping files: %s",
-                    e,
-                )
-                return
+            except Exception:
+                data = _parse_simple_yaml(content)
 
         self.accounts = {str(k): str(v) for k, v in data.get("accounts", {}).items()}
         self.categories = {str(k): str(v) for k, v in data.get("categories", {}).items()}
