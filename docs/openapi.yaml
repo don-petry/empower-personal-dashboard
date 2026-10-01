@@ -617,6 +617,8 @@ components:
 
     DataQueryRequest:
       type: object
+      required:
+        - csrf
       properties:
         lastServerChangeId:
           type: string
@@ -633,6 +635,8 @@ components:
 
     GetTransactionsRequest:
       type: object
+      required:
+        - csrf
       properties:
         startDate:
           type: string

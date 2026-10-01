@@ -15,11 +15,11 @@ Read [AGENTS.md](./AGENTS.md) before making any changes. It defines the project-
 # Run all unit tests
 PYTHONPATH=. python3 -m unittest discover tests
 
-# Run OpenAPI contract tests specifically
+# Run OpenAPI contract tests specifically (requires pip install -e ".[test]")
 PYTHONPATH=. python3 -m unittest tests/test_openapi_contract.py
 
 # Validate OpenAPI 3.1 specification
-npx @redocly/cli lint docs/openapi.yaml
+npx --yes @redocly/cli@2.57.0 lint docs/openapi.yaml
 
 # Syntax and byte-compilation check
 python3 -m compileall empower_personal_dashboard tests

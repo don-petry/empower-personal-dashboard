@@ -233,7 +233,7 @@ empower-mcp --sandbox
 
 As formalized in [ADR-0002](docs/adr/0002-openapi-specification.md):
 1. **Tier 1 (Upstream Wire Protocol):** Documents the private RPC-over-HTTP POST endpoints (`/api/login/identifyUser`, `/api/credential/challengeSms`, `/api/newaccount/getAccounts`, `/api/invest/getHoldings`, `/api/transaction/getUserTransactions`), `spHeader` envelopes, error handling, session cookies (`JSESSIONID`), and CSRF tokens (`X-CSRF`).
-2. **Tier 2 (Canonical Domain Schemas):** Defines normalized component schemas matching the Python dataclasses (`DashboardBalances`, `AccountBalance`, `DashboardHoldings`, `InvestmentHolding`, `DashboardTransactions`, `Transaction`, `NetWorthSummary`) consumed by the CLI and Model Context Protocol (FastMCP) server.
+2. **Tier 2 (Canonical Domain Schemas):** Defines normalized component schemas matching the Python dataclasses (`DashboardBalances`, `AccountBalance`, `DashboardHoldings`, `InvestmentHolding`, `DashboardTransactions`, `Transaction`) and the `NetWorthSummary` payload consumed by the CLI and Model Context Protocol (FastMCP) server.
 
 ### Local Validation & Preview
 
@@ -241,12 +241,12 @@ You can validate and preview the OpenAPI 3.1 specification locally using [Redocl
 
 ```bash
 # Validate specification syntax and rules
-npx @redocly/cli lint docs/openapi.yaml
+npx --yes @redocly/cli@2.57.0 lint docs/openapi.yaml
 
 # Launch interactive documentation preview server
-npx @redocly/cli preview-docs docs/openapi.yaml
+npx --yes @redocly/cli@2.57.0 preview-docs docs/openapi.yaml
 
-# Run hermetic contract unit tests
+# Run hermetic contract unit tests (requires pip install -e ".[test]")
 PYTHONPATH=. python3 -m unittest tests/test_openapi_contract.py
 ```
 

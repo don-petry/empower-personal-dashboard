@@ -63,7 +63,11 @@ class TestOpenApiContract(unittest.TestCase):
 
         if HAS_REFERENCING:
             ref_schema = {"$ref": f"urn:openapi#/components/schemas/{schema_name}"}
-            validator = Draft202012Validator(ref_schema, registry=self.registry)
+            validator = Draft202012Validator(
+                ref_schema,
+                registry=self.registry,
+                format_checker=Draft202012Validator.FORMAT_CHECKER,
+            )
             errors = list(validator.iter_errors(instance))
             if errors:
                 err_msgs = [f"- {e.json_path}: {e.message}" for e in errors]
@@ -71,7 +75,12 @@ class TestOpenApiContract(unittest.TestCase):
         else:  # pragma: no cover
             schema = self.spec["components"]["schemas"][schema_name]
             from jsonschema import validate
-            validate(instance=instance, schema=schema, resolver=self.resolver)
+            validate(
+                instance=instance,
+                schema=schema,
+                resolver=self.resolver,
+                format_checker=Draft202012Validator.FORMAT_CHECKER,
+            )
 
     def test_spec_files_exist_and_resolve(self):
         """Verify both docs/openapi.yaml and root openapi.yaml exist and parse identically."""
