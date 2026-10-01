@@ -180,6 +180,30 @@ class TestMCPServer(unittest.TestCase):
 
         asyncio.run(run_check())
 
+    def test_auto_reload_session_on_mtime_change(self) -> None:
+        if not self._require_server():
+            return
+
+        async def run_check() -> None:
+            mock_client = MagicMock()
+            mock_client.mock_mode = False
+            mock_session_file = MagicMock()
+            mock_session_file.exists.return_value = True
+            mock_session_file.stat.return_value.st_mtime = 100.0
+            mock_client.session_file = mock_session_file
+            mock_client.fetch_balances.return_value = self.client.fetch_balances()
+
+            server = create_mcp_server(client=mock_client)
+            await server.call_tool("get_net_worth_summary", {})
+            self.assertEqual(mock_client.load_session.call_count, 0)
+
+            # Simulate out-of-band login updating file mtime on disk
+            mock_session_file.stat.return_value.st_mtime = 200.0
+            await server.call_tool("check_auth_status", {})
+            self.assertEqual(mock_client.load_session.call_count, 1)
+
+        asyncio.run(run_check())
+
     def test_api_error_handling(self) -> None:
         if not self._require_server():
             return

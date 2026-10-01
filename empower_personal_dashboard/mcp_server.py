@@ -131,28 +131,70 @@ def create_mcp_server(
     empower_client = client or EmpowerDashboardClient()
     cache = _DataCache(ttl_seconds=cache_ttl_seconds)
 
+    last_session_mtime: float = 0.0
+    if not empower_client.mock_mode and empower_client.session_file.exists():
+        try:
+            last_session_mtime = empower_client.session_file.stat().st_mtime
+        except Exception:
+            pass
+
+    def _ensure_session_fresh() -> None:
+        nonlocal last_session_mtime
+        if empower_client.mock_mode:
+            return
+        session_file = empower_client.session_file
+        if session_file.exists():
+            try:
+                mtime = session_file.stat().st_mtime
+                if mtime > last_session_mtime:
+                    empower_client.load_session(session_file)
+                    last_session_mtime = mtime
+                    # Invalidate in-memory caches since session re-authenticated
+                    cache.balances = None
+                    cache.holdings = None
+                    cache.transactions.clear()
+            except Exception as e:
+                logger.warning(f"Failed to refresh session from {session_file}: {e}")
+
     def _fetch_balances_cached() -> DashboardBalances:
+        _ensure_session_fresh()
         cached = cache.get_balances()
         if cached:
             return cached
-        fresh = empower_client.fetch_balances()
+        try:
+            fresh = empower_client.fetch_balances()
+        except (SessionExpiredError, RequireTwoFactorException):
+            _ensure_session_fresh()
+            cache.balances = None
+            raise
         cache.set_balances(fresh)
         return fresh
 
     def _fetch_holdings_cached() -> DashboardHoldings:
+        _ensure_session_fresh()
         cached = cache.get_holdings()
         if cached:
             return cached
-        fresh = empower_client.fetch_holdings()
+        try:
+            fresh = empower_client.fetch_holdings()
+        except (SessionExpiredError, RequireTwoFactorException):
+            _ensure_session_fresh()
+            cache.holdings = None
+            raise
         cache.set_holdings(fresh)
         return fresh
 
     def _fetch_transactions_cached(start_date: Optional[str], end_date: Optional[str], limit: int) -> DashboardTransactions:
+        _ensure_session_fresh()
         key = f"{start_date}_{end_date}_{limit}"
         cached = cache.get_transactions(key)
         if cached:
             return cached
-        fresh = empower_client.fetch_transactions(start_date=start_date, end_date=end_date, limit=limit)
+        try:
+            fresh = empower_client.fetch_transactions(start_date=start_date, end_date=end_date, limit=limit)
+        except (SessionExpiredError, RequireTwoFactorException):
+            _ensure_session_fresh()
+            raise
         cache.set_transactions(key, fresh)
         return fresh
 
@@ -402,6 +444,7 @@ def create_mcp_server(
         Returns:
             Dict containing authenticated boolean status, session path, and guidance.
         """
+        _ensure_session_fresh()
         session_file = empower_client.session_file
         exists = session_file.exists()
         if not exists and not empower_client.mock_mode:
