@@ -54,17 +54,22 @@ class TestMCPServer(unittest.TestCase):
             self.assertIn("get_holdings", tool_names)
             self.assertIn("get_transactions", tool_names)
             self.assertIn("check_auth_status", tool_names)
+            self.assertIn("export_data", tool_names)
+            self.assertIn("get_export_options", tool_names)
 
             resources = await self.server.list_resources()
             resource_uris = [str(r.uri) for r in resources]
             self.assertIn("empower://balances/summary", resource_uris)
             self.assertIn("empower://holdings/portfolio", resource_uris)
             self.assertIn("empower://accounts/list", resource_uris)
+            self.assertIn("empower://export/options", resource_uris)
 
             prompts = await self.server.list_prompts()
             prompt_names = [p.name for p in prompts]
             self.assertIn("portfolio_review", prompt_names)
             self.assertIn("spending_audit", prompt_names)
+            self.assertIn("recent_purchases_audit", prompt_names)
+            self.assertIn("top_holdings_review", prompt_names)
 
         asyncio.run(run_check())
 
@@ -81,6 +86,17 @@ class TestMCPServer(unittest.TestCase):
             self.assertGreater(payload["total_cash"], 0)
             self.assertGreater(payload["total_investment"], 0)
             self.assertEqual(payload["accounts_count"], 5)
+
+            # Markdown format
+            res_md = await self.server.call_tool("get_net_worth_summary", {"format": "markdown"})
+            payload_md = json.loads(res_md.content[0].text)
+            self.assertIn("formatted_output", payload_md)
+            self.assertIn("### Empower Net Worth Summary", payload_md["formatted_output"])
+
+            # Table format
+            res_tbl = await self.server.call_tool("get_net_worth_summary", {"format": "table"})
+            payload_tbl = json.loads(res_tbl.content[0].text)
+            self.assertIn("formatted_output", payload_tbl)
 
         asyncio.run(run_check())
 
@@ -109,6 +125,16 @@ class TestMCPServer(unittest.TestCase):
             self.assertEqual(payload_inv["status"], "success")
             self.assertEqual(payload_inv["accounts_count"], 2)
 
+            # Markdown and table formats
+            res_md = await self.server.call_tool("get_balances", {"format": "markdown"})
+            payload_md = json.loads(res_md.content[0].text)
+            self.assertIn("formatted_output", payload_md)
+            self.assertIn("|", payload_md["formatted_output"])
+
+            res_tbl = await self.server.call_tool("get_balances", {"format": "table"})
+            payload_tbl = json.loads(res_tbl.content[0].text)
+            self.assertIn("formatted_output", payload_tbl)
+
         asyncio.run(run_check())
 
     def test_tool_get_holdings_with_filter_and_limit(self) -> None:
@@ -127,6 +153,35 @@ class TestMCPServer(unittest.TestCase):
             res_limit = await self.server.call_tool("get_holdings", {"limit": 1})
             payload_limit = json.loads(res_limit.content[0].text)
             self.assertEqual(payload_limit["returned_count"], 1)
+
+            # Aggregation by ticker
+            res_agg = await self.server.call_tool("get_holdings", {"aggregate_by_ticker": True})
+            payload_agg = json.loads(res_agg.content[0].text)
+            self.assertEqual(payload_agg["status"], "success")
+            for h in payload_agg["holdings"]:
+                self.assertIn("holding_percentage", h)
+                self.assertIn("accounts_count", h)
+
+            # Sort by ticker
+            res_sort_ticker = await self.server.call_tool("get_holdings", {"sort_by": "ticker"})
+            payload_sort_ticker = json.loads(res_sort_ticker.content[0].text)
+            tickers = [h["ticker"] for h in payload_sort_ticker["holdings"]]
+            self.assertEqual(tickers, sorted(tickers))
+
+            # Min value filter
+            res_min = await self.server.call_tool("get_holdings", {"min_value": 50000.0})
+            payload_min = json.loads(res_min.content[0].text)
+            for h in payload_min["holdings"]:
+                self.assertGreaterEqual(h["value"], 50000.0)
+
+            # Formats
+            res_md = await self.server.call_tool("get_holdings", {"format": "markdown"})
+            payload_md = json.loads(res_md.content[0].text)
+            self.assertIn("formatted_output", payload_md)
+
+            res_tbl = await self.server.call_tool("get_holdings", {"format": "table"})
+            payload_tbl = json.loads(res_tbl.content[0].text)
+            self.assertIn("formatted_output", payload_tbl)
 
         asyncio.run(run_check())
 
@@ -148,6 +203,47 @@ class TestMCPServer(unittest.TestCase):
             res_cat = await self.server.call_tool("get_transactions", {"category": "payroll"})
             payload_cat = json.loads(res_cat.content[0].text)
             self.assertEqual(payload_cat["status"], "success")
+
+            # Relative days filter
+            res_days = await self.server.call_tool("get_transactions", {"days": 30})
+            payload_days = json.loads(res_days.content[0].text)
+            self.assertEqual(payload_days["status"], "success")
+
+            # Spending only filter
+            res_spending = await self.server.call_tool("get_transactions", {"spending_only": True})
+            payload_spending = json.loads(res_spending.content[0].text)
+            self.assertEqual(payload_spending["status"], "success")
+            for tx in payload_spending["transactions"]:
+                self.assertTrue(tx["is_spending"])
+
+            # Income only filter
+            res_income = await self.server.call_tool("get_transactions", {"income_only": True})
+            payload_income = json.loads(res_income.content[0].text)
+            self.assertEqual(payload_income["status"], "success")
+            for tx in payload_income["transactions"]:
+                self.assertTrue(tx["is_income"])
+
+            # Transaction type filter
+            res_type = await self.server.call_tool("get_transactions", {"transaction_type": "Purchase"})
+            payload_type = json.loads(res_type.content[0].text)
+            self.assertEqual(payload_type["status"], "success")
+            for tx in payload_type["transactions"]:
+                self.assertEqual(tx["transaction_type"], "Purchase")
+
+            # Min amount filter
+            res_amount = await self.server.call_tool("get_transactions", {"min_amount": 1000.0})
+            payload_amount = json.loads(res_amount.content[0].text)
+            for tx in payload_amount["transactions"]:
+                self.assertGreaterEqual(abs(tx["amount"]), 1000.0)
+
+            # Formatted output
+            res_md = await self.server.call_tool("get_transactions", {"format": "markdown"})
+            payload_md = json.loads(res_md.content[0].text)
+            self.assertIn("formatted_output", payload_md)
+
+            res_tbl = await self.server.call_tool("get_transactions", {"format": "table"})
+            payload_tbl = json.loads(res_tbl.content[0].text)
+            self.assertIn("formatted_output", payload_tbl)
 
         asyncio.run(run_check())
 
@@ -244,6 +340,61 @@ class TestMCPServer(unittest.TestCase):
 
         asyncio.run(run_check())
 
+    def test_tool_get_export_options(self) -> None:
+        if not self._require_server():
+            return
+
+        async def run_check() -> None:
+            res = await self.server.call_tool("get_export_options", {})
+            self.assertFalse(res.is_error)
+            payload = json.loads(res.content[0].text)
+            self.assertEqual(payload["status"], "success")
+            self.assertIn("json", payload["supported_formats"])
+            self.assertIn("csv", payload["supported_formats"])
+            self.assertIn("all", payload["data_scopes"])
+            self.assertIn("bulk_export_csv", payload["cli_examples"])
+            self.assertIn("export_data", payload["mcp_export_tool"])
+
+        asyncio.run(run_check())
+
+    def test_tool_export_data(self) -> None:
+        if not self._require_server():
+            return
+
+        async def run_check() -> None:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                res = await self.server.call_tool(
+                    "export_data",
+                    {"destination_dir": tmpdir, "scope": "all", "export_csv": True},
+                )
+                self.assertFalse(res.is_error)
+                payload = json.loads(res.content[0].text)
+                self.assertEqual(payload["status"], "success")
+                self.assertEqual(payload["files_count"], 6)
+
+                dest = Path(tmpdir)
+                self.assertTrue((dest / "empower_balances.json").exists())
+                self.assertTrue((dest / "empower_balances.csv").exists())
+                self.assertTrue((dest / "empower_holdings.json").exists())
+                self.assertTrue((dest / "empower_holdings.csv").exists())
+                self.assertTrue((dest / "empower_transactions.jsonl").exists())
+                self.assertTrue((dest / "empower_transactions.csv").exists())
+
+            # Specific scope without CSV
+            with tempfile.TemporaryDirectory() as tmpdir:
+                res_bal = await self.server.call_tool(
+                    "export_data",
+                    {"destination_dir": tmpdir, "scope": "balances", "export_csv": False},
+                )
+                payload_bal = json.loads(res_bal.content[0].text)
+                self.assertEqual(payload_bal["status"], "success")
+                self.assertEqual(payload_bal["files_count"], 1)
+                dest = Path(tmpdir)
+                self.assertTrue((dest / "empower_balances.json").exists())
+                self.assertFalse((dest / "empower_balances.csv").exists())
+
+        asyncio.run(run_check())
+
     def test_resources_and_prompts(self) -> None:
         if not self._require_server():
             return
@@ -253,10 +404,19 @@ class TestMCPServer(unittest.TestCase):
             res_content = await self.server.read_resource("empower://balances/summary")
             self.assertTrue(len(res_content) > 0)
 
-            # Get prompt
+            res_export = await self.server.read_resource("empower://export/options")
+            self.assertIn("Export Options", str(res_export))
+
+            # Get prompts
             prompt_res = await self.server.get_prompt("portfolio_review", {"risk_profile": "aggressive"})
             self.assertIn("portfolio review", prompt_res.messages[0].content.text)
             self.assertIn("aggressive", prompt_res.messages[0].content.text)
+
+            prompt_purchases = await self.server.get_prompt("recent_purchases_audit", {"days": 14})
+            self.assertIn("14 days", prompt_purchases.messages[0].content.text)
+
+            prompt_top_holdings = await self.server.get_prompt("top_holdings_review", {"limit": 5})
+            self.assertIn("top 5 investment holdings", prompt_top_holdings.messages[0].content.text)
 
         asyncio.run(run_check())
 
