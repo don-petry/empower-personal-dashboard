@@ -1,6 +1,6 @@
 # ADR-0002: OpenAPI 3.1 Specification & Contract Testing Architecture
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-01
 - **Deciders:** Don Petry
 - **Consulted:** Antigravity AI, open-source community architectural precedents

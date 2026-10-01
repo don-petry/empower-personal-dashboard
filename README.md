@@ -36,6 +36,9 @@ This library provides full programmatic and CLI access to:
   - [Installation with MCP Support](#installation-with-mcp-support)
   - [Configuration for AI Agents](#configuration-for-ai-agents)
   - [MCP Tools & Resources](#mcp-tools--resources)
+- [OpenAPI 3.1 Specification & Contract Testing](#openapi-31-specification--contract-testing)
+  - [Two-Tier Architecture](#two-tier-architecture)
+  - [Local Validation & Preview](#local-validation--preview)
 - [Architecture & Authentication Lifecycle](#architecture--authentication-lifecycle)
 - [Security & Privacy Model](#security--privacy-model)
 - [Development & Testing](#development--testing)
@@ -218,6 +221,33 @@ uvx --from "empower-personal-dashboard[mcp]" empower-mcp
 Test the MCP server without credentials or network calls:
 ```bash
 empower-mcp --sandbox
+```
+
+---
+
+## OpenAPI 3.1 Specification & Contract Testing
+
+`empower-personal-dashboard` maintains a formal, machine-readable [OpenAPI 3.1 specification](docs/openapi.yaml) (also accessible via the repository root symlink [`openapi.yaml`](openapi.yaml)) documenting the reverse-engineered Empower Personal Dashboard RPC wire protocol and canonical financial domain schemas.
+
+### Two-Tier Architecture
+
+As formalized in [ADR-0002](docs/adr/0002-openapi-specification.md):
+1. **Tier 1 (Upstream Wire Protocol):** Documents the private RPC-over-HTTP POST endpoints (`/api/login/identifyUser`, `/api/credential/challengeSms`, `/api/newaccount/getAccounts`, `/api/invest/getHoldings`, `/api/transaction/getUserTransactions`), `spHeader` envelopes, error handling, session cookies (`JSESSIONID`), and CSRF tokens (`X-CSRF`).
+2. **Tier 2 (Canonical Domain Schemas):** Defines normalized component schemas matching the Python dataclasses (`DashboardBalances`, `AccountBalance`, `DashboardHoldings`, `InvestmentHolding`, `DashboardTransactions`, `Transaction`, `NetWorthSummary`) consumed by the CLI and Model Context Protocol (FastMCP) server.
+
+### Local Validation & Preview
+
+You can validate and preview the OpenAPI 3.1 specification locally using [Redocly CLI](https://redocly.com/docs/cli/):
+
+```bash
+# Validate specification syntax and rules
+npx @redocly/cli lint docs/openapi.yaml
+
+# Launch interactive documentation preview server
+npx @redocly/cli preview-docs docs/openapi.yaml
+
+# Run hermetic contract unit tests
+PYTHONPATH=. python3 -m unittest tests/test_openapi_contract.py
 ```
 
 ---

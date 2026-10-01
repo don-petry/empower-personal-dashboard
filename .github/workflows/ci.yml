@@ -13,6 +13,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint-openapi:
+    name: lint-openapi (Redocly CLI)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5a1 # v4.1.0
+        with:
+          node-version: "20"
+      - name: Validate OpenAPI 3.1 specification
+        run: npx --yes @redocly/cli lint docs/openapi.yaml --format=github-actions
+
   build-and-test:
     name: build-and-test (${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -33,7 +48,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -e ".[mcp]"
+          pip install -e ".[mcp,test]"
       - name: Compile sources
         run: python -m compileall empower_personal_dashboard tests
       - name: Run unit test suite
