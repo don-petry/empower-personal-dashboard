@@ -1,0 +1,1486 @@
+openapi: 3.1.0
+info:
+  title: Empower Personal Dashboard API
+  description: |-
+    Reverse-engineered OpenAPI 3.1 interface specification for Empower Personal Dashboard (formerly Personal Capital).
+    Models the upstream RPC-over-HTTP wire protocol and canonical financial domain models for linked bank, credit, loan, and investment accounts.
+
+    All data models and examples adhere strictly to the project's Zero-PII mandate using synthetic test benchmarks.
+  version: 0.1.0
+  contact:
+    name: Empower Personal Dashboard Contributors
+    url: https://github.com/petry-projects/empower-personal-dashboard
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: https://home.personalcapital.com/api
+    description: Default legacy web API endpoint
+  - url: https://pc-api.empower-retirement.com/api
+    description: Unified platform migrated API endpoint (auto-routed on Code 920)
+
+security:
+  - CookieAuth: []
+    CsrfToken: []
+
+paths:
+  /login/identifyUser:
+    post:
+      summary: Identify user and initiate authentication
+      description: |-
+        Submits the user's login identifier (email/username). Returns initial session state,
+        available two-factor challenge methods, or indicates migration to the unified retirement platform.
+      operationId: identifyUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/IdentifyUserRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentifyUserRequest'
+      responses:
+        '200':
+          description: Identification result and challenge requirements.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentifyUserEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /credential/challengeSms:
+    post:
+      summary: Request 2FA challenge via SMS
+      description: Triggers an out-of-band SMS verification code sent to the user's linked telephone number.
+      operationId: challengeSms
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChallengeSmsRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallengeSmsRequest'
+      responses:
+        '200':
+          description: Challenge dispatched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RpcEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /credential/challengeEmail:
+    post:
+      summary: Request 2FA challenge via Email
+      description: Triggers an out-of-band email verification code sent to the user's registered email address.
+      operationId: challengeEmail
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChallengeEmailRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallengeEmailRequest'
+      responses:
+        '200':
+          description: Challenge dispatched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RpcEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /credential/authenticateSms:
+    post:
+      summary: Submit SMS 2FA verification code
+      description: Submits the one-time SMS verification code to establish trusted device authentication.
+      operationId: authenticateSms
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AuthenticateCodeRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticateCodeRequest'
+      responses:
+        '200':
+          description: Verification code accepted; device authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RpcEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /credential/authenticateEmailByCode:
+    post:
+      summary: Submit Email 2FA verification code
+      description: Submits the one-time email verification code to establish trusted device authentication.
+      operationId: authenticateEmailByCode
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AuthenticateCodeRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticateCodeRequest'
+      responses:
+        '200':
+          description: Verification code accepted; device authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RpcEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /credential/authenticatePassword:
+    post:
+      summary: Authenticate password and bind device
+      description: |-
+        Submits password credential and device metadata. On success, binds the device
+        and issues persistent session cookies.
+      operationId: authenticatePassword
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AuthenticatePasswordRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticatePasswordRequest'
+      responses:
+        '200':
+          description: Authentication successful; session established.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RpcEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /newaccount/getAccounts:
+    post:
+      summary: Fetch aggregated accounts and balance figures
+      description: |-
+        Primary accounts aggregation endpoint. Returns linked financial institution accounts,
+        current balances, asset/liability classifications, and net worth totals.
+      operationId: getAccounts
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DataQueryRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataQueryRequest'
+      responses:
+        '200':
+          description: Aggregated accounts and balance totals.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetAccountsEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /newaccount/getAccounts2:
+    post:
+      summary: Fetch aggregated accounts and balance figures (v2)
+      description: Extended accounts aggregation endpoint with additional institution metadata.
+      operationId: getAccounts2
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DataQueryRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataQueryRequest'
+      responses:
+        '200':
+          description: Aggregated accounts and balance totals.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetAccountsEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /invest/getHoldings:
+    post:
+      summary: Fetch investment portfolio holdings and lots
+      description: Returns individual investment positions, security identifiers (ticker, CUSIP), quantities, prices, and daily performance metrics.
+      operationId: getHoldings
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DataQueryRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataQueryRequest'
+      responses:
+        '200':
+          description: Investment positions and total portfolio value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetHoldingsEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /transaction/getUserTransactions:
+    post:
+      summary: Fetch paginated and filtered historical transactions
+      description: Retrieves transaction records within a date range, optionally filtered by user account IDs.
+      operationId: getUserTransactions
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GetTransactionsRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetTransactionsRequest'
+      responses:
+        '200':
+          description: Historical transactions and cashflow totals.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetUserTransactionsEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /transaction/getUserTransactions2:
+    post:
+      summary: Fetch paginated and filtered historical transactions (v2)
+      description: Extended transactions endpoint with enhanced categorization metadata.
+      operationId: getUserTransactions2
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GetTransactionsRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetTransactionsRequest'
+      responses:
+        '200':
+          description: Historical transactions and cashflow totals.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetUserTransactionsEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: JSESSIONID
+      description: Session cookie issued upon successful password authentication.
+    CsrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF
+      description: Cross-site request forgery prevention token extracted from web session or spHeader.
+
+  responses:
+    BadRequestError:
+      description: Bad request, missing parameters, or invalid payload structure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RpcEnvelope'
+    UnauthorizedError:
+      description: Unauthorized, session expired, or authentication required (Empower Code 202/203).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RpcEnvelope'
+
+  schemas:
+    # --------------------------------------------------------------------------
+    # Tier 1: Upstream Wire Protocol Envelopes & Payloads
+    # --------------------------------------------------------------------------
+
+    SpHeader:
+      type: object
+      description: Empower RPC response header envelope containing status, CSRF updates, and error lists.
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: Indicates whether the RPC call completed without fatal failure.
+          example: true
+        authLevel:
+          type: string
+          description: Current session authentication level.
+          enum:
+            - NONE
+            - USER_IDENTIFIED
+            - MFA_REQUIRED
+            - USER_REMEMBERED
+          example: USER_REMEMBERED
+        csrf:
+          type: string
+          description: Rotated or active CSRF token for subsequent requests.
+          example: csrf-token-synthetic-abc123
+        status:
+          type: string
+          description: Human-readable status indicator.
+          example: OK
+        code:
+          type:
+            - integer
+            - 'null'
+          description: Upstream status code (0 for success).
+          example: 0
+        errors:
+          type: array
+          description: List of error objects if the request failed or required redirection.
+          items:
+            $ref: '#/components/schemas/ApiError'
+
+    ApiError:
+      type: object
+      description: Standard upstream error structure.
+      properties:
+        code:
+          type: integer
+          description: Empower domain error code (e.g. 202/203 session expired, 920 platform migration).
+          example: 920
+        message:
+          type: string
+          description: Upstream error message or migration description.
+          example: User has migrated to the new site.
+
+    RpcEnvelope:
+      type: object
+      description: Generic RPC response envelope.
+      required:
+        - spHeader
+      properties:
+        spHeader:
+          $ref: '#/components/schemas/SpHeader'
+        spData:
+          type: object
+          description: Endpoint-specific payload dictionary.
+
+    IdentifyUserRequest:
+      type: object
+      required:
+        - username
+        - csrf
+      properties:
+        username:
+          type: string
+          description: User login email or username.
+          example: user@example.com
+        csrf:
+          type: string
+          description: Scraped homepage CSRF token.
+          example: initial-csrf-token
+        apiClient:
+          type: string
+          default: WEB
+          example: WEB
+        bindDevice:
+          type: string
+          default: "false"
+          example: "false"
+        skipLinkAccount:
+          type: string
+          default: "false"
+        redirectTo:
+          type: string
+          default: ""
+        skipFirstUse:
+          type: string
+          default: ""
+        referrerId:
+          type: string
+          default: ""
+
+    IdentifyUserData:
+      type: object
+      description: User identification data payload.
+      properties:
+        allCredentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/CredentialChallengeMethod'
+        challengeMethods:
+          type: array
+          items:
+            $ref: '#/components/schemas/CredentialChallengeMethod'
+
+    IdentifyUserEnvelope:
+      type: object
+      required:
+        - spHeader
+      properties:
+        spHeader:
+          $ref: '#/components/schemas/SpHeader'
+        spData:
+          $ref: '#/components/schemas/IdentifyUserData'
+
+    CredentialChallengeMethod:
+      type: object
+      description: 2FA challenge channel supported by user account.
+      properties:
+        name:
+          type: string
+          description: Credential identifier (e.g., OOB_SMS, OOB_EMAIL).
+          example: OOB_SMS
+        status:
+          type: string
+          description: Credential activation state.
+          example: ACTIVE
+        display:
+          type: string
+          description: Masked phone number or email destination.
+          example: (***) ***-1234
+
+    ChallengeSmsRequest:
+      type: object
+      required:
+        - csrf
+      properties:
+        challengeReason:
+          type: string
+          default: DEVICE_AUTH
+          example: DEVICE_AUTH
+        challengeMethod:
+          type: string
+          default: OP
+          example: OP
+        challengeType:
+          type: string
+          default: challengeSMS
+          example: challengeSMS
+        apiClient:
+          type: string
+          default: WEB
+          example: WEB
+        bindDevice:
+          type: string
+          default: "false"
+          example: "false"
+        csrf:
+          type: string
+          description: Active session CSRF token.
+          example: csrf-token-synthetic-abc123
+
+    ChallengeEmailRequest:
+      type: object
+      required:
+        - csrf
+      properties:
+        challengeReason:
+          type: string
+          default: DEVICE_AUTH
+          example: DEVICE_AUTH
+        challengeMethod:
+          type: string
+          default: OP
+          example: OP
+        challengeType:
+          type: string
+          default: challengeEmail
+          example: challengeEmail
+        apiClient:
+          type: string
+          default: WEB
+          example: WEB
+        bindDevice:
+          type: string
+          default: "false"
+          example: "false"
+        csrf:
+          type: string
+          description: Active session CSRF token.
+          example: csrf-token-synthetic-abc123
+
+    AuthenticateCodeRequest:
+      type: object
+      required:
+        - code
+        - csrf
+      properties:
+        challengeReason:
+          type: string
+          default: DEVICE_AUTH
+          example: DEVICE_AUTH
+        challengeMethod:
+          type: string
+          default: OP
+          example: OP
+        code:
+          type: string
+          description: One-time verification code received via SMS or email.
+          example: "123456"
+        apiClient:
+          type: string
+          default: WEB
+          example: WEB
+        bindDevice:
+          type: string
+          default: "false"
+          example: "false"
+        csrf:
+          type: string
+          description: Active session CSRF token.
+          example: csrf-token-synthetic-abc123
+
+    AuthenticatePasswordRequest:
+      type: object
+      required:
+        - passwd
+        - csrf
+      properties:
+        passwd:
+          type: string
+          format: password
+          description: Account password.
+          example: "***REDACTED***"
+        deviceName:
+          type: string
+          default: Empower CLI Client
+          example: Empower CLI Client
+        bindDevice:
+          type: string
+          default: "true"
+          example: "true"
+        apiClient:
+          type: string
+          default: WEB
+          example: WEB
+        csrf:
+          type: string
+          description: Active session CSRF token.
+          example: csrf-token-synthetic-abc123
+        redirectTo:
+          type: string
+          default: ""
+        skipFirstUse:
+          type: string
+          default: ""
+        skipLinkAccount:
+          type: string
+          default: "false"
+        referrerId:
+          type: string
+          default: ""
+
+    DataQueryRequest:
+      type: object
+      properties:
+        lastServerChangeId:
+          type: string
+          default: "-1"
+          example: "-1"
+        apiClient:
+          type: string
+          default: WEB
+          example: WEB
+        csrf:
+          type: string
+          description: Active session CSRF token.
+          example: csrf-token-synthetic-abc123
+
+    GetTransactionsRequest:
+      type: object
+      properties:
+        startDate:
+          type: string
+          format: date
+          description: Filter transactions on or after this ISO date.
+          example: "2026-09-01"
+        endDate:
+          type: string
+          format: date
+          description: Filter transactions on or before this ISO date.
+          example: "2026-09-30"
+        userAccountIds:
+          type: array
+          items:
+            type:
+              - integer
+              - string
+          description: Optional list of user account IDs to filter.
+          example: [1001, 1002]
+        lastServerChangeId:
+          type: string
+          default: "-1"
+          example: "-1"
+        apiClient:
+          type: string
+          default: WEB
+          example: WEB
+        csrf:
+          type: string
+          description: Active session CSRF token.
+          example: csrf-token-synthetic-abc123
+
+    UpstreamAccount:
+      type: object
+      description: Raw financial institution account object from getAccounts RPC.
+      properties:
+        accountId:
+          type:
+            - string
+            - integer
+          description: Unique institution-assigned or system account identifier.
+          example: ACC-INV-001
+        userAccountId:
+          type:
+            - integer
+            - 'null'
+          description: Internal numerical user account ID.
+          example: 1001
+        name:
+          type: string
+          description: Account name provided by institution or user.
+          example: Horizon 401(k) Retirement Plan
+        accountName:
+          type: string
+          description: Alternative account label.
+          example: Horizon 401(k) Retirement Plan
+        firmName:
+          type: string
+          description: Financial institution or brokerage firm name.
+          example: Horizon Investments
+        accountType:
+          type: string
+          description: Account classification category.
+          example: INVESTMENT
+        currentBalance:
+          type: number
+          format: double
+          description: Current account balance.
+          example: 350000.00
+        balance:
+          type: number
+          format: double
+          description: Alternative balance field.
+          example: 350000.00
+        isAsset:
+          type: boolean
+          description: True if asset (bank, investment), false if liability (credit card, mortgage, loan).
+          example: true
+        currency:
+          type: string
+          default: USD
+          example: USD
+        lastRefreshed:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: ISO timestamp of last upstream institution synchronization.
+          example: "2026-10-01T08:00:00Z"
+
+    AccountsData:
+      type: object
+      description: Data payload returned by getAccounts RPC.
+      properties:
+        networth:
+          type: number
+          format: double
+          description: Aggregated total net worth.
+          example: 547050.00
+        netWorth:
+          type: number
+          format: double
+          example: 547050.00
+        totalCash:
+          type: number
+          format: double
+          example: 79500.00
+        cashAccountsTotal:
+          type: number
+          format: double
+          example: 79500.00
+        totalInvestment:
+          type: number
+          format: double
+          example: 475000.00
+        investmentAccountsTotal:
+          type: number
+          format: double
+          example: 475000.00
+        totalCreditCard:
+          type: number
+          format: double
+          example: 2450.00
+        creditCardAccountsTotal:
+          type: number
+          format: double
+          example: 2450.00
+        totalLoan:
+          type: number
+          format: double
+          example: 0.00
+        loanAccountsTotal:
+          type: number
+          format: double
+          example: 0.00
+        totalMortgage:
+          type: number
+          format: double
+          example: 0.00
+        mortgageAccountsTotal:
+          type: number
+          format: double
+          example: 0.00
+        totalOtherAssets:
+          type: number
+          format: double
+          example: 0.00
+        otherAssetAccountsTotal:
+          type: number
+          format: double
+          example: 0.00
+        totalOtherLiabilities:
+          type: number
+          format: double
+          example: 0.00
+        otherLiabilitiesAccountsTotal:
+          type: number
+          format: double
+          example: 0.00
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpstreamAccount'
+
+    GetAccountsEnvelope:
+      type: object
+      required:
+        - spHeader
+      properties:
+        spHeader:
+          $ref: '#/components/schemas/SpHeader'
+        spData:
+          $ref: '#/components/schemas/AccountsData'
+
+    UpstreamHolding:
+      type: object
+      description: Raw investment holding record from getHoldings RPC.
+      properties:
+        userAccountId:
+          type:
+            - integer
+            - 'null'
+          example: 1001
+        accountName:
+          type: string
+          example: Horizon 401(k) Retirement Plan
+        ticker:
+          type: string
+          example: VTI
+        originalTicker:
+          type: string
+          example: VTI
+        cusip:
+          type: string
+          example: "922908769"
+        originalCusip:
+          type: string
+          example: "922908769"
+        description:
+          type: string
+          example: Vanguard Total Stock Market ETF
+        originalDescription:
+          type: string
+          example: Vanguard Total Stock Market ETF
+        holdingType:
+          type: string
+          example: ETF
+        type:
+          type: string
+          example: ETF
+        quantity:
+          type: number
+          format: double
+          example: 1000.0
+        price:
+          type: number
+          format: double
+          example: 275.50
+        value:
+          type: number
+          format: double
+          example: 275500.00
+        costBasis:
+          type:
+            - number
+            - 'null'
+          format: double
+          example: 200000.00
+        holdingPercentage:
+          type:
+            - number
+            - 'null'
+          format: double
+          example: 58.0
+        oneDayPercentChange:
+          type:
+            - number
+            - 'null'
+          format: double
+          example: 0.45
+        oneDayValueChange:
+          type:
+            - number
+            - 'null'
+          format: double
+          example: 1239.75
+
+    HoldingsData:
+      type: object
+      description: Data payload returned by getHoldings RPC.
+      properties:
+        holdingsTotalValue:
+          type: number
+          format: double
+          description: Aggregate valuation across all investment positions.
+          example: 475000.00
+        holdings:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpstreamHolding'
+
+    GetHoldingsEnvelope:
+      type: object
+      required:
+        - spHeader
+      properties:
+        spHeader:
+          $ref: '#/components/schemas/SpHeader'
+        spData:
+          $ref: '#/components/schemas/HoldingsData'
+
+    UpstreamTransaction:
+      type: object
+      description: Raw transaction entry from getUserTransactions RPC.
+      properties:
+        userTransactionId:
+          type:
+            - string
+            - integer
+          example: TXN-001
+        accountId:
+          type:
+            - string
+            - integer
+          example: ACC-CHK-003
+        userAccountId:
+          type:
+            - integer
+            - 'null'
+          example: 1003
+        accountName:
+          type: string
+          example: Apex Premier Checking
+        transactionDate:
+          type: string
+          format: date
+          example: "2026-09-15"
+        description:
+          type: string
+          example: Payroll Direct Deposit
+        originalDescription:
+          type: string
+          example: ACH DIRECT DEPOSIT PAYROLL
+        amount:
+          type: number
+          format: double
+          example: 4500.00
+        isCredit:
+          type: boolean
+          example: true
+        isCashIn:
+          type: boolean
+          example: true
+        isCashOut:
+          type: boolean
+          example: false
+        isIncome:
+          type: boolean
+          example: true
+        isSpending:
+          type: boolean
+          example: false
+        transactionType:
+          type: string
+          example: Deposit
+        investmentType:
+          type:
+            - string
+            - 'null'
+          example: null
+        symbol:
+          type:
+            - string
+            - 'null'
+          example: null
+        price:
+          type:
+            - number
+            - 'null'
+          format: double
+          example: null
+        quantity:
+          type:
+            - number
+            - 'null'
+          format: double
+          example: null
+        status:
+          type: string
+          example: posted
+        categoryId:
+          type:
+            - integer
+            - 'null'
+          example: 1
+
+    TransactionsData:
+      type: object
+      description: Data payload returned by getUserTransactions RPC.
+      properties:
+        startDate:
+          type: string
+          format: date
+          example: "2026-09-01"
+        endDate:
+          type: string
+          format: date
+          example: "2026-09-30"
+        moneyIn:
+          type: number
+          format: double
+          example: 5375.50
+        moneyOut:
+          type: number
+          format: double
+          example: 182.40
+        netCashflow:
+          type: number
+          format: double
+          example: 5193.10
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpstreamTransaction'
+
+    GetUserTransactionsEnvelope:
+      type: object
+      required:
+        - spHeader
+      properties:
+        spHeader:
+          $ref: '#/components/schemas/SpHeader'
+        spData:
+          $ref: '#/components/schemas/TransactionsData'
+
+    # --------------------------------------------------------------------------
+    # Tier 2: Canonical Domain Schemas (CLI, Python Models, & FastMCP)
+    # --------------------------------------------------------------------------
+
+    AccountBalance:
+      type: object
+      description: Cleaned and normalized financial institution account balance.
+      required:
+        - account_id
+        - account_name
+        - firm_name
+        - account_type
+        - balance
+        - is_asset
+        - currency
+      properties:
+        account_id:
+          type: string
+          description: Normalized string identifier for the account.
+          example: ACC-INV-001
+        account_name:
+          type: string
+          description: Sanitized account title without mojibake or replacement characters.
+          example: Horizon 401(k) Retirement Plan
+        firm_name:
+          type: string
+          description: Sanitized institution or brokerage firm name.
+          example: Horizon Investments
+        account_type:
+          type: string
+          description: Normalized account type (INVESTMENT, BANK, CREDIT_CARD, MORTGAGE, LOAN, OTHER).
+          example: INVESTMENT
+        balance:
+          type: number
+          format: double
+          description: Account balance rounded to two decimal places.
+          example: 350000.00
+        is_asset:
+          type: boolean
+          description: Indicates whether this account contributes positively to assets (true) or liabilities (false).
+          example: true
+        currency:
+          type: string
+          default: USD
+          example: USD
+        last_refreshed:
+          type:
+            - string
+            - 'null'
+          description: ISO timestamp when account was last refreshed from institution.
+          example: "2026-10-01T08:00:00Z"
+        user_account_id:
+          type:
+            - integer
+            - 'null'
+          description: Internal numerical account identifier.
+          example: 1001
+
+    DashboardBalances:
+      type: object
+      description: Canonical aggregated balance sheet and net worth statement.
+      required:
+        - as_of_date
+        - net_worth
+        - total_cash
+        - total_investment
+        - total_credit_card
+        - total_loan
+        - total_mortgage
+        - accounts
+        - accounts_count
+        - mode
+      properties:
+        as_of_date:
+          type: string
+          format: date
+          description: Valuation date (YYYY-MM-DD).
+          example: "2026-10-01"
+        net_worth:
+          type: number
+          format: double
+          description: Total net worth (Assets minus Liabilities).
+          example: 547050.00
+        total_cash:
+          type: number
+          format: double
+          description: Total liquid cash across checking and savings.
+          example: 79500.00
+        total_investment:
+          type: number
+          format: double
+          description: Total investments across brokerages and retirement accounts.
+          example: 475000.00
+        total_credit_card:
+          type: number
+          format: double
+          description: Total credit card liabilities.
+          example: 2450.00
+        total_loan:
+          type: number
+          format: double
+          description: Total outstanding personal/auto loan balances.
+          example: 0.00
+        total_mortgage:
+          type: number
+          format: double
+          description: Total mortgage liabilities.
+          example: 0.00
+        total_other_assets:
+          type: number
+          format: double
+          default: 0.00
+          example: 0.00
+        total_other_liabilities:
+          type: number
+          format: double
+          default: 0.00
+          example: 0.00
+        accounts_count:
+          type: integer
+          description: Number of linked accounts included.
+          example: 5
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountBalance'
+        mode:
+          type: string
+          description: Operating mode (live or sandbox_mock).
+          enum:
+            - live
+            - sandbox_mock
+          example: live
+
+    InvestmentHolding:
+      type: object
+      description: Sanitized investment position within an investment/brokerage account.
+      required:
+        - account_name
+        - ticker
+        - cusip
+        - description
+        - holding_type
+        - quantity
+        - price
+        - value
+      properties:
+        user_account_id:
+          type:
+            - integer
+            - 'null'
+          example: 1001
+        account_name:
+          type: string
+          example: Horizon 401(k) Retirement Plan
+        ticker:
+          type: string
+          description: Stock or ETF ticker symbol.
+          example: VTI
+        cusip:
+          type: string
+          description: Security CUSIP identifier.
+          example: "922908769"
+        description:
+          type: string
+          description: Sanitized security name or company description.
+          example: Vanguard Total Stock Market ETF
+        holding_type:
+          type: string
+          description: Instrument classification (ETF, Stock, Mutual Fund, Bond, Cash, Other).
+          example: ETF
+        quantity:
+          type: number
+          format: double
+          description: Number of shares or units held.
+          example: 1000.0
+        price:
+          type: number
+          format: double
+          description: Current unit market price.
+          example: 275.50
+        value:
+          type: number
+          format: double
+          description: Total position market value (quantity * price).
+          example: 275500.00
+        cost_basis:
+          type:
+            - number
+            - 'null'
+          format: double
+          description: Total acquisition cost.
+          example: 200000.00
+        holding_percentage:
+          type:
+            - number
+            - 'null'
+          format: double
+          description: Percentage of overall investment portfolio.
+          example: 58.00
+        one_day_percent_change:
+          type:
+            - number
+            - 'null'
+          format: double
+          description: One-day percentage change.
+          example: 0.45
+        one_day_value_change:
+          type:
+            - number
+            - 'null'
+          format: double
+          description: One-day dollar gain or loss.
+          example: 1239.75
+
+    DashboardHoldings:
+      type: object
+      description: Canonical investment portfolio summary with itemized positions.
+      required:
+        - as_of_date
+        - total_value
+        - holdings_count
+        - holdings
+        - mode
+      properties:
+        as_of_date:
+          type: string
+          format: date
+          example: "2026-10-01"
+        total_value:
+          type: number
+          format: double
+          description: Aggregate valuation of all investment positions.
+          example: 475000.00
+        holdings_count:
+          type: integer
+          description: Total number of discrete holdings.
+          example: 4
+        holdings:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvestmentHolding'
+        mode:
+          type: string
+          enum:
+            - live
+            - sandbox_mock
+          example: live
+
+    Transaction:
+      type: object
+      description: Normalized and sanitized transaction record.
+      required:
+        - user_transaction_id
+        - account_id
+        - account_name
+        - transaction_date
+        - description
+        - original_description
+        - amount
+        - is_credit
+        - is_cash_in
+        - is_cash_out
+        - is_income
+        - is_spending
+        - transaction_type
+        - status
+      properties:
+        user_transaction_id:
+          type: string
+          example: TXN-001
+        account_id:
+          type: string
+          example: ACC-CHK-003
+        user_account_id:
+          type:
+            - integer
+            - 'null'
+          example: 1003
+        account_name:
+          type: string
+          example: Apex Premier Checking
+        transaction_date:
+          type: string
+          format: date
+          example: "2026-09-15"
+        description:
+          type: string
+          description: Sanitized merchant or transaction description.
+          example: Payroll Direct Deposit
+        original_description:
+          type: string
+          description: Raw unparsed transaction memo from institution.
+          example: ACH DIRECT DEPOSIT PAYROLL
+        amount:
+          type: number
+          format: double
+          description: Transaction monetary amount.
+          example: 4500.00
+        is_credit:
+          type: boolean
+          example: true
+        is_cash_in:
+          type: boolean
+          example: true
+        is_cash_out:
+          type: boolean
+          example: false
+        is_income:
+          type: boolean
+          example: true
+        is_spending:
+          type: boolean
+          example: false
+        transaction_type:
+          type: string
+          example: Deposit
+        investment_type:
+          type:
+            - string
+            - 'null'
+          example: null
+        symbol:
+          type:
+            - string
+            - 'null'
+          example: null
+        price:
+          type:
+            - number
+            - 'null'
+          format: double
+          example: null
+        quantity:
+          type:
+            - number
+            - 'null'
+          format: double
+          example: null
+        status:
+          type: string
+          default: posted
+          example: posted
+        category_id:
+          type:
+            - integer
+            - 'null'
+          example: 1
+
+    DashboardTransactions:
+      type: object
+      description: Canonical transactions collection with date bounds and cashflow aggregates.
+      required:
+        - start_date
+        - end_date
+        - total_transactions
+        - money_in
+        - money_out
+        - net_cashflow
+        - transactions
+        - mode
+      properties:
+        start_date:
+          type: string
+          format: date
+          example: "2026-09-01"
+        end_date:
+          type: string
+          format: date
+          example: "2026-09-30"
+        total_transactions:
+          type: integer
+          example: 4
+        money_in:
+          type: number
+          format: double
+          example: 5375.50
+        money_out:
+          type: number
+          format: double
+          example: 182.40
+        net_cashflow:
+          type: number
+          format: double
+          example: 5193.10
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        mode:
+          type: string
+          enum:
+            - live
+            - sandbox_mock
+          example: live
+
+    NetWorthSummary:
+      type: object
+      description: Lightweight net worth breakdown optimized for LLM contexts and quick summaries.
+      required:
+        - status
+        - net_worth
+        - total_cash
+        - total_investment
+        - total_credit_card
+        - total_mortgage
+        - total_loan
+        - accounts_count
+      properties:
+        status:
+          type: string
+          example: success
+        net_worth:
+          type: number
+          format: double
+          example: 547050.00
+        total_cash:
+          type: number
+          format: double
+          example: 79500.00
+        total_investment:
+          type: number
+          format: double
+          example: 475000.00
+        total_credit:
+          type: number
+          format: double
+          example: 2450.00
+        total_credit_card:
+          type: number
+          format: double
+          example: 2450.00
+        total_mortgage:
+          type: number
+          format: double
+          example: 0.00
+        total_loan:
+          type: number
+          format: double
+          example: 0.00
+        total_other_assets:
+          type: number
+          format: double
+          default: 0.00
+          example: 0.00
+        total_other_liabilities:
+          type: number
+          format: double
+          default: 0.00
+          example: 0.00
+        accounts_count:
+          type: integer
+          example: 5
+        formatted_output:
+          type: string
+          description: Optional formatted ASCII or Markdown table.
