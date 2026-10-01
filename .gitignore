@@ -27,6 +27,7 @@ htmlcov/
 *.tmp
 
 # Empower session tokens & dumps (NEVER commit sessions)
+.empower_personal_dashboard_session.json
 .empower*.json
 *session*.json
 empower_debug.log
