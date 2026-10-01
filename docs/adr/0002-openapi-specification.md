@@ -90,9 +90,9 @@ flowchart LR
 | Endpoint Path | HTTP Verb | Purpose | Response Payload (`spData`) |
 | :--- | :--- | :--- | :--- |
 | `/api/login/identifyUser` | `POST` | Phase 1 authentication bootstrap and username lookup | `{ allCredentials: [...], challengeMethods: [...] }` |
-| `/api/credential/challengeSms` | `POST` | Phase 1 SMS 2FA verification challenge dispatch | `{ challengeReason: "DEVICE_AUTH", ... }` |
-| `/api/credential/authenticateSms` | `POST` | Phase 1 SMS 2FA verification code submission | `{ authenticated: bool, ... }` |
-| `/api/credential/authenticatePassword` | `POST` | Phase 1 password authentication & device binding | `{ authenticated: bool, ... }` |
+| `/api/credential/challengeSms` | `POST` | Phase 1 SMS 2FA verification challenge dispatch | `RpcEnvelope` (`spData: object`) |
+| `/api/credential/authenticateSms` | `POST` | Phase 1 SMS 2FA verification code submission | `RpcEnvelope` (`spData: object`) |
+| `/api/credential/authenticatePassword` | `POST` | Phase 1 password authentication & device binding | `RpcEnvelope` (`spData: object`) |
 | `/api/newaccount/getAccounts2` | `POST` | Aggregated accounts, institutions, and balance figures | `{ accounts: [Account], ... }` |
 | `/api/invest/getHoldings` | `POST` | Detailed investment portfolio positions & lots | `{ holdings: [Holding], ... }` |
 | `/api/transaction/getUserTransactions2` | `POST` | Filtered and paginated transaction history | `{ transactions: [Transaction], ... }` |

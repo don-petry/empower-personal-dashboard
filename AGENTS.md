@@ -80,7 +80,7 @@ This repository adheres to strict Test-Driven Development as mandated by the org
   PYTHONPATH=. python3 -m unittest tests/test_openapi_contract.py
 
   # Validate OpenAPI 3.1 specification syntax and rules
-  npx --yes @redocly/cli lint docs/openapi.yaml
+  npx --yes @redocly/cli@2.57.0 lint docs/openapi.yaml
 
   # Byte-compile syntax and import verification
   python3 -m compileall empower_personal_dashboard tests
