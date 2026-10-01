@@ -198,7 +198,11 @@ def create_mcp_server(
         cache.set_holdings(fresh)
         return fresh
 
-    def _fetch_transactions_cached(start_date: Optional[str], end_date: Optional[str], limit: int) -> DashboardTransactions:
+    def _fetch_transactions_cached(
+        start_date: Optional[str],
+        end_date: Optional[str],
+        limit: Optional[int] = None,
+    ) -> DashboardTransactions:
         _ensure_session_fresh()
         key = f"{start_date}_{end_date}_{limit}"
         cached = cache.get_transactions(key)
@@ -246,7 +250,8 @@ def create_mcp_server(
                 "total_other_liabilities": balances.total_other_liabilities,
                 "accounts_count": len(balances.accounts),
             }
-            if format.lower() in ("markdown", "table"):
+            fmt = format.lower()
+            if fmt == "markdown":
                 res["formatted_output"] = (
                     f"### Empower Net Worth Summary ({balances.as_of_date})\n\n"
                     f"- **Net Worth**: **{format_currency(balances.net_worth)}**\n"
@@ -257,6 +262,21 @@ def create_mcp_server(
                     f"- **Mortgages & Loans**: -{format_currency(balances.total_mortgage + balances.total_loan)}\n"
                     f"- **Linked Accounts**: {len(balances.accounts)}"
                 )
+            elif fmt == "table":
+                lines = [
+                    f"### Empower Net Worth Summary ({balances.as_of_date})",
+                    "",
+                    "| Category | Amount |",
+                    "| :--- | ---: |",
+                    f"| Net Worth | **{format_currency(balances.net_worth)}** |",
+                    f"| Total Investments | {format_currency(balances.total_investment)} |",
+                    f"| Total Cash / Banking | {format_currency(balances.total_cash)} |",
+                    f"| Real Estate & Physical Assets | {format_currency(balances.total_other_assets)} |",
+                    f"| Credit Card Liabilities | -{format_currency(balances.total_credit_card)} |",
+                    f"| Mortgages & Loans | -{format_currency(balances.total_mortgage + balances.total_loan)} |",
+                    f"| Linked Accounts | {len(balances.accounts)} |",
+                ]
+                res["formatted_output"] = "\n".join(lines)
             return res
         except (SessionExpiredError, RequireTwoFactorException, FileNotFoundError):
             return {
@@ -321,10 +341,26 @@ def create_mcp_server(
                     continue
                 filtered.append(_sanitize_account_dict(a))
 
-            res = {
-                "status": "success",
-                "net_worth": balances.net_worth,
-                "totals_by_type": {
+            if account_types is not None:
+                cash_total = sum(a.get("balance", 0.0) for a in filtered if str(a.get("account_type", "")).upper() in ("BANK", "CASH", "CHECKING", "SAVINGS"))
+                inv_total = sum(a.get("balance", 0.0) for a in filtered if str(a.get("account_type", "")).upper() in ("INVESTMENT", "INVESTMENTS"))
+                cc_total = sum(a.get("balance", 0.0) for a in filtered if str(a.get("account_type", "")).upper() in ("CREDIT", "CREDIT_CARD"))
+                mort_total = sum(a.get("balance", 0.0) for a in filtered if str(a.get("account_type", "")).upper() in ("MORTGAGE", "MORTGAGES"))
+                loan_total = sum(a.get("balance", 0.0) for a in filtered if str(a.get("account_type", "")).upper() in ("LOAN", "LOANS"))
+                other_assets_total = sum(a.get("balance", 0.0) for a in filtered if a.get("is_asset", True) and str(a.get("account_type", "")).upper() not in ("BANK", "CASH", "CHECKING", "SAVINGS", "INVESTMENT", "INVESTMENTS"))
+                other_liab_total = sum(a.get("balance", 0.0) for a in filtered if not a.get("is_asset", True) and str(a.get("account_type", "")).upper() not in ("CREDIT", "CREDIT_CARD", "MORTGAGE", "MORTGAGES", "LOAN", "LOANS"))
+                totals_by_type = {
+                    "cash": round(cash_total, 2),
+                    "investment": round(inv_total, 2),
+                    "credit": round(cc_total, 2),
+                    "credit_card": round(cc_total, 2),
+                    "mortgage": round(mort_total, 2),
+                    "loan": round(loan_total, 2),
+                    "other_assets": round(other_assets_total, 2),
+                    "other_liabilities": round(other_liab_total, 2),
+                }
+            else:
+                totals_by_type = {
                     "cash": balances.total_cash,
                     "investment": balances.total_investment,
                     "credit": balances.total_credit_card,
@@ -333,14 +369,33 @@ def create_mcp_server(
                     "loan": balances.total_loan,
                     "other_assets": balances.total_other_assets,
                     "other_liabilities": balances.total_other_liabilities,
-                },
+                }
+
+            filtered_balances = DashboardBalances(
+                as_of_date=balances.as_of_date,
+                net_worth=balances.net_worth,
+                total_cash=totals_by_type["cash"],
+                total_investment=totals_by_type["investment"],
+                total_credit_card=totals_by_type["credit_card"],
+                total_loan=totals_by_type["loan"],
+                total_mortgage=totals_by_type["mortgage"],
+                total_other_assets=totals_by_type["other_assets"],
+                total_other_liabilities=totals_by_type["other_liabilities"],
+                accounts=filtered,
+                mode=balances.mode,
+            )
+
+            res = {
+                "status": "success",
+                "net_worth": balances.net_worth,
+                "totals_by_type": totals_by_type,
                 "accounts_count": len(filtered),
                 "accounts": filtered,
             }
             if format.lower() == "markdown":
-                res["formatted_output"] = render_balances_markdown(balances)
+                res["formatted_output"] = render_balances_markdown(filtered_balances)
             elif format.lower() == "table":
-                res["formatted_output"] = render_balances_table(balances)
+                res["formatted_output"] = render_balances_table(filtered_balances)
             return res
         except (SessionExpiredError, RequireTwoFactorException, FileNotFoundError):
             return {
@@ -400,8 +455,10 @@ def create_mcp_server(
                     pos_ticker = str(pos.get("ticker") or "").upper()
                     if pos_ticker != ticker_upper:
                         continue
-                if account_id is not None and pos.get("account_id") != account_id:
-                    continue
+                if account_id is not None:
+                    pos_acct_id = pos.get("user_account_id") if pos.get("user_account_id") is not None else pos.get("account_id")
+                    if pos_acct_id != account_id and str(pos_acct_id) != str(account_id):
+                        continue
                 filtered.append(dict(pos))
 
             if aggregate_by_ticker:
@@ -427,9 +484,11 @@ def create_mcp_server(
                     g["quantity"] += qty
                     g["value"] += val
                     g["cost_basis"] += cb
+                    acct_id_val = pos.get("user_account_id") if pos.get("user_account_id") is not None else pos.get("account_id")
                     g["accounts"].append({
                         "account_name": pos.get("account_name"),
-                        "account_id": pos.get("account_id"),
+                        "account_id": acct_id_val,
+                        "user_account_id": acct_id_val,
                         "quantity": qty,
                         "value": val,
                     })
@@ -474,9 +533,9 @@ def create_mcp_server(
                     mode=holdings.mode,
                 )
                 if format.lower() == "markdown":
-                    res["formatted_output"] = render_holdings_markdown(temp_holdings, limit=clamped_limit)
+                    res["formatted_output"] = render_holdings_markdown(temp_holdings, limit=clamped_limit, preserve_order=True)
                 else:
-                    res["formatted_output"] = render_holdings_table(temp_holdings, limit=clamped_limit)
+                    res["formatted_output"] = render_holdings_table(temp_holdings, limit=clamped_limit, preserve_order=True)
 
             return res
         except (SessionExpiredError, RequireTwoFactorException, FileNotFoundError):
@@ -539,14 +598,31 @@ def create_mcp_server(
             clamped_limit = min(max(1, limit), 200)
 
             if days is not None:
+                if days < 0:
+                    return {
+                        "status": "error",
+                        "error_code": "INVALID_ARGUMENT",
+                        "message": "days must be non-negative",
+                    }
                 now_utc = datetime.now(timezone.utc)
-                start_date = (now_utc - timedelta(days=days)).strftime("%Y-%m-%d")
-                end_date = now_utc.strftime("%Y-%m-%d")
+                start_date = start_date or (now_utc - timedelta(days=days)).strftime("%Y-%m-%d")
+                end_date = end_date or now_utc.strftime("%Y-%m-%d")
 
+            has_post_filters = bool(
+                account_id is not None
+                or category
+                or spending_only
+                or income_only
+                or transaction_type
+                or min_amount is not None
+                or max_amount is not None
+            )
+
+            fetch_limit = None if has_post_filters else clamped_limit
             tx_data = _fetch_transactions_cached(
                 start_date=start_date,
                 end_date=end_date,
-                limit=clamped_limit,
+                limit=fetch_limit,
             )
 
             filtered: List[Dict[str, Any]] = []
@@ -554,8 +630,11 @@ def create_mcp_server(
             type_lower = transaction_type.strip().lower() if transaction_type else None
 
             for tx in tx_data.transactions:
-                if account_id is not None and tx.get("account_id") != account_id:
-                    continue
+                if account_id is not None:
+                    tx_acct_id = tx.get("account_id")
+                    tx_user_acct_id = tx.get("user_account_id")
+                    if str(account_id) != str(tx_acct_id) and account_id != tx_user_acct_id:
+                        continue
                 if category_lower:
                     tx_cat = str(tx.get("category") or "").lower()
                     if category_lower not in tx_cat:
@@ -577,23 +656,42 @@ def create_mcp_server(
                 filtered.append(tx)
 
             returned_tx = filtered[:clamped_limit]
+
+            if has_post_filters:
+                filtered_money_in = sum(
+                    abs(t.get("amount", 0.0)) for t in filtered if t.get("is_cash_in") or t.get("is_credit") or t.get("is_income")
+                )
+                filtered_money_out = sum(
+                    abs(t.get("amount", 0.0)) for t in filtered if t.get("is_cash_out") or t.get("is_spending")
+                )
+                filtered_net_cashflow = round(filtered_money_in - filtered_money_out, 2)
+            else:
+                filtered_money_in = tx_data.money_in
+                filtered_money_out = tx_data.money_out
+                filtered_net_cashflow = tx_data.net_cashflow
+
             res: Dict[str, Any] = {
                 "status": "success",
-                "total_transactions": tx_data.total_transactions,
-                "net_cashflow": tx_data.net_cashflow,
+                "total_transactions": len(filtered) if has_post_filters else tx_data.total_transactions,
+                "net_cashflow": filtered_net_cashflow,
+                "money_in": round(filtered_money_in, 2),
+                "money_out": round(filtered_money_out, 2),
                 "matching_count": len(filtered),
                 "returned_count": len(returned_tx),
                 "transactions": returned_tx,
             }
+            if has_post_filters:
+                res["period_net_cashflow"] = tx_data.net_cashflow
+                res["period_total_transactions"] = tx_data.total_transactions
 
             if format.lower() in ("markdown", "table"):
                 temp_tx = DashboardTransactions(
                     start_date=tx_data.start_date,
                     end_date=tx_data.end_date,
-                    total_transactions=tx_data.total_transactions,
-                    money_in=tx_data.money_in,
-                    money_out=tx_data.money_out,
-                    net_cashflow=tx_data.net_cashflow,
+                    total_transactions=len(filtered) if has_post_filters else tx_data.total_transactions,
+                    money_in=filtered_money_in,
+                    money_out=filtered_money_out,
+                    net_cashflow=filtered_net_cashflow,
                     transactions=returned_tx,
                     mode=tx_data.mode,
                 )
@@ -687,11 +785,56 @@ def create_mcp_server(
             Dict containing export status, destination path, list of files created with record counts, and summary.
         """
         try:
-            dest_path = Path(destination_dir).expanduser().resolve()
+            VALID_SCOPES = ("all", "balances", "holdings", "transactions")
+            scope_clean = scope.strip().lower()
+            if scope_clean not in VALID_SCOPES:
+                return {
+                    "status": "error",
+                    "error_code": "INVALID_ARGUMENT",
+                    "message": f"Invalid scope '{scope}'. Supported scopes: {', '.join(VALID_SCOPES)}.",
+                }
+
+            raw_dest = Path(destination_dir).expanduser()
+            if raw_dest.is_symlink():
+                return {
+                    "status": "error",
+                    "error_code": "ACCESS_DENIED",
+                    "message": f"destination_dir '{destination_dir}' cannot be a symlink.",
+                }
+
+            export_root = Path(os.environ.get("EMPOWER_EXPORT_ROOT", "./data")).expanduser().resolve()
+            dest_path = raw_dest.resolve()
+            try:
+                dest_path.relative_to(export_root)
+            except ValueError:
+                return {
+                    "status": "error",
+                    "error_code": "ACCESS_DENIED",
+                    "message": (
+                        f"destination_dir '{destination_dir}' resolves to '{dest_path}' which is outside "
+                        f"the authorized export root '{export_root}'. Configure EMPOWER_EXPORT_ROOT if needed."
+                    ),
+                }
+
+            if dest_path.is_symlink():
+                return {
+                    "status": "error",
+                    "error_code": "ACCESS_DENIED",
+                    "message": f"destination_dir '{destination_dir}' cannot be a symlink.",
+                }
+
             dest_path.mkdir(parents=True, exist_ok=True)
             files_created: List[Dict[str, Any]] = []
 
-            scope_clean = scope.strip().lower()
+            def _check_symlink(target_file: Path) -> Optional[Dict[str, Any]]:
+                if target_file.is_symlink():
+                    return {
+                        "status": "error",
+                        "error_code": "ACCESS_DENIED",
+                        "message": f"Refusing to write to symlinked destination file '{target_file}'.",
+                    }
+                return None
+
             do_balances = scope_clean in ("all", "balances")
             do_holdings = scope_clean in ("all", "holdings")
             do_transactions = scope_clean in ("all", "transactions")
@@ -699,33 +842,48 @@ def create_mcp_server(
             if do_balances:
                 balances = _fetch_balances_cached()
                 b_json_path = dest_path / "empower_balances.json"
+                sym_err = _check_symlink(b_json_path)
+                if sym_err:
+                    return sym_err
                 with open(b_json_path, "w", encoding="utf-8") as f:
                     json.dump(balances.to_dict(), f, indent=2, ensure_ascii=False)
                 files_created.append({"file": str(b_json_path), "format": "json", "records": len(balances.accounts)})
 
                 if export_csv:
                     b_csv_path = dest_path / "empower_balances.csv"
+                    sym_err = _check_symlink(b_csv_path)
+                    if sym_err:
+                        return sym_err
                     export_balances_csv(balances, b_csv_path)
                     files_created.append({"file": str(b_csv_path), "format": "csv", "records": len(balances.accounts)})
 
             if do_holdings:
                 holdings = _fetch_holdings_cached()
                 h_json_path = dest_path / "empower_holdings.json"
+                sym_err = _check_symlink(h_json_path)
+                if sym_err:
+                    return sym_err
                 with open(h_json_path, "w", encoding="utf-8") as f:
                     json.dump(holdings.to_dict(), f, indent=2, ensure_ascii=False)
                 files_created.append({"file": str(h_json_path), "format": "json", "records": len(holdings.holdings)})
 
                 if export_csv:
                     h_csv_path = dest_path / "empower_holdings.csv"
+                    sym_err = _check_symlink(h_csv_path)
+                    if sym_err:
+                        return sym_err
                     export_holdings_csv(holdings, h_csv_path)
                     files_created.append({"file": str(h_csv_path), "format": "csv", "records": len(holdings.holdings)})
 
             if do_transactions:
                 s_date = start_date or f"{datetime.now(timezone.utc).year}-01-01"
                 e_date = end_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                tx_data = _fetch_transactions_cached(start_date=s_date, end_date=e_date, limit=limit or 500)
+                tx_data = _fetch_transactions_cached(start_date=s_date, end_date=e_date, limit=limit)
 
                 t_jsonl_path = dest_path / "empower_transactions.jsonl"
+                sym_err = _check_symlink(t_jsonl_path)
+                if sym_err:
+                    return sym_err
                 with open(t_jsonl_path, "w", encoding="utf-8") as f:
                     for t in tx_data.transactions:
                         f.write(json.dumps(t, ensure_ascii=False) + "\n")
@@ -733,6 +891,9 @@ def create_mcp_server(
 
                 if export_csv:
                     t_csv_path = dest_path / "empower_transactions.csv"
+                    sym_err = _check_symlink(t_csv_path)
+                    if sym_err:
+                        return sym_err
                     export_transactions_csv(tx_data, t_csv_path)
                     files_created.append({"file": str(t_csv_path), "format": "csv", "records": len(tx_data.transactions)})
 
