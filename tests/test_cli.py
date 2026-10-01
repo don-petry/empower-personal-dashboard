@@ -75,6 +75,52 @@ class TestCLI(unittest.TestCase):
 
             self.assertTrue(out_balances.exists())
 
+    def test_cli_sandbox_beancount_modular_export(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_ledger = Path(tmpdir) / "ledger"
+            argv = [
+                "empower",
+                "--sandbox",
+                "--all",
+                "--beancount",
+                "--output-beancount",
+                str(out_ledger),
+                "--quiet",
+            ]
+
+            with patch.object(sys, "argv", argv):
+                exit_code = cli_main()
+                self.assertEqual(exit_code, 0)
+
+            self.assertTrue((out_ledger / "main.bean").exists())
+            self.assertTrue((out_ledger / "accounts.bean").exists())
+            self.assertTrue((out_ledger / "balances.bean").exists())
+            self.assertTrue((out_ledger / "prices.bean").exists())
+            self.assertTrue((out_ledger / "transactions.bean").exists())
+
+    def test_cli_sandbox_beancount_single_file_export(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_file = Path(tmpdir) / "export.bean"
+            argv = [
+                "empower",
+                "--sandbox",
+                "--all",
+                "--beancount",
+                "--output-beancount",
+                str(out_file),
+                "--quiet",
+            ]
+
+            with patch.object(sys, "argv", argv):
+                exit_code = cli_main()
+                self.assertEqual(exit_code, 0)
+
+            self.assertTrue(out_file.exists())
+            content = out_file.read_text(encoding="utf-8")
+            self.assertIn("option \"title\" \"Empower Personal Dashboard Ledger\"", content)
+            self.assertIn("open Equity:Opening-Balances USD", content)
+
 
 if __name__ == "__main__":
     unittest.main()
+

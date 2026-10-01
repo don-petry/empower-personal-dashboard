@@ -141,6 +141,23 @@ def parse_args() -> argparse.Namespace:
         help="Export companion CSV files alongside JSON output.",
     )
     parser.add_argument(
+        "--beancount",
+        action="store_true",
+        help="Export data to Beancount plain-text accounting format (.bean / .beancount).",
+    )
+    parser.add_argument(
+        "--output-beancount",
+        type=Path,
+        default=None,
+        help="File path or directory for Beancount ledger export.",
+    )
+    parser.add_argument(
+        "--beancount-map",
+        type=Path,
+        default=None,
+        help="Path to YAML/JSON Beancount account/category mapping configuration.",
+    )
+    parser.add_argument(
         "--email",
         "--username",
         type=str,
@@ -167,9 +184,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--format",
-        choices=["table", "markdown", "json"],
+        choices=["table", "markdown", "json", "beancount"],
         default="table",
-        help="Console output format (table, markdown, json).",
+        help="Console output format (table, markdown, json, beancount).",
     )
     parser.add_argument(
         "--debug",
@@ -599,6 +616,43 @@ def main() -> int:
                 if not args.quiet:
                     print(f"[+] Transactions CSV saved to: {csv_path}")
 
+        if args.beancount:
+            from empower_personal_dashboard.beancount import BeancountGenerator, BeancountMapper
+
+            mapper = BeancountMapper(mapping_path=args.beancount_map)
+            generator = BeancountGenerator(mapper=mapper)
+
+            if args.output_beancount:
+                out_target = Path(args.output_beancount)
+                if out_target.suffix in (".bean", ".beancount"):
+                    generator.export_single_file(
+                        filepath=out_target,
+                        balances=balances_res,
+                        holdings=holdings_res,
+                        transactions=transactions_res,
+                    )
+                    if not args.quiet:
+                        print(f"[+] Beancount ledger saved to: {out_target}")
+                else:
+                    created = generator.export_modular_ledger(
+                        destination_dir=out_target,
+                        balances=balances_res,
+                        holdings=holdings_res,
+                        transactions=transactions_res,
+                    )
+                    if not args.quiet:
+                        print(f"[+] Beancount modular ledger ({len(created)} files) saved to: {out_target}")
+            else:
+                dest_dir = Path("ledger")
+                created = generator.export_modular_ledger(
+                    destination_dir=dest_dir,
+                    balances=balances_res,
+                    holdings=holdings_res,
+                    transactions=transactions_res,
+                )
+                if not args.quiet:
+                    print(f"[+] Beancount modular ledger ({len(created)} files) saved to: {dest_dir}")
+
     except SessionExpiredError as e:
         print(f"[!] {e}", file=sys.stderr)
         print("[!] Your session has expired. Re-authenticate by running: empower --login", file=sys.stderr)
@@ -627,6 +681,21 @@ def main() -> int:
                 print(render_holdings_markdown(holdings_res, limit=args.limit or 25))
             if transactions_res:
                 print(render_transactions_markdown(transactions_res, limit=args.limit or 25))
+        elif args.format == "beancount":
+            from empower_personal_dashboard.beancount import BeancountGenerator, BeancountMapper
+
+            mapper = BeancountMapper(mapping_path=args.beancount_map)
+            generator = BeancountGenerator(mapper=mapper)
+            output_parts = []
+            if balances_res:
+                output_parts.append(generator.generate_accounts_bean(balances_res))
+                output_parts.append(generator.generate_balances_bean(balances_res, holdings_res))
+            if holdings_res:
+                output_parts.append(generator.generate_prices_bean(holdings_res))
+                output_parts.append(generator.generate_holdings_bean(holdings_res))
+            if transactions_res:
+                output_parts.append(generator.generate_transactions_bean(transactions_res))
+            print("\n".join(part.strip() for part in output_parts if part.strip()))
         else:
             if balances_res:
                 print(render_balances_table(balances_res))

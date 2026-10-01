@@ -49,14 +49,17 @@ test = [
     "referencing>=0.30.0",
     "pyyaml>=6.0",
 ]
+beancount = [
+    "pyyaml>=6.0",
+]
 dev = [
     "pytest>=8.0",
     "build>=1.0",
     "twine>=5.0",
-    "empower-personal-dashboard[test]",
+    "empower-personal-dashboard[test,beancount]",
 ]
 all = [
-    "empower-personal-dashboard[mcp,test,dev]",
+    "empower-personal-dashboard[mcp,test,beancount,dev]",
 ]
 
 [project.scripts]

@@ -38,7 +38,8 @@ python3 -m empower_personal_dashboard.mcp_server --sandbox
 - `empower_personal_dashboard/models.py`: Strongly typed dataclasses (`DashboardBalances`, `DashboardHoldings`, `DashboardTransactions`).
 - `empower_personal_dashboard/sanitizers.py`: Text cleaning and `\ufffd` stripping.
 - `empower_personal_dashboard/exceptions.py`: Domain exception hierarchy.
-- `empower_personal_dashboard/cli.py`: Interactive CLI with formatted tables, markdown, JSON, CSV exports.
+- `empower_personal_dashboard/beancount.py`: Pure-Python Beancount Plain-Text Accounting (PTA) export engine.
+- `empower_personal_dashboard/cli.py`: Interactive CLI with formatted tables, markdown, JSON, CSV, and Beancount exports.
 - `docs/openapi.yaml`: Canonical OpenAPI 3.1 specification for upstream RPC wire protocol and canonical domain schemas.
-- `docs/adr/`: Architectural Decision Records (ADR-0001 FastMCP, ADR-0002 OpenAPI 3.1).
-- `tests/`: Offline test suite verifying models, sanitizers, client flows, CLI options, FastMCP server, and OpenAPI contract tests.
+- `docs/adr/`: Architectural Decision Records (ADR-0001 FastMCP, ADR-0002 OpenAPI 3.1, ADR-0003 Beancount Export).
+- `tests/`: Offline test suite verifying models, sanitizers, client flows, CLI options, FastMCP server, Beancount exports, and OpenAPI contract tests.

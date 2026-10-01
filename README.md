@@ -95,12 +95,31 @@ empower --format markdown
 empower --all --format json
 ```
 
-### 3. Offline Sandbox Mode
+### 3. Beancount Plain-Text Accounting (PTA) Export
+
+Export double-entry ledgers, ground-truth balance assertions, and commodity price points directly into [Beancount](https://github.com/beancount/beancount) format:
+
+```bash
+# Export modular ledger directory (main.bean, accounts.bean, balances.bean, prices.bean, transactions.bean)
+empower --all --beancount --output-beancount ./ledger/
+
+# Export to a single Beancount ledger file
+empower --all --beancount --output-beancount ./my_finances.bean
+
+# Use a custom YAML mapping configuration for category rules and account aliases
+empower --all --beancount --beancount-map ~/.empower_beancount_map.yaml
+
+# Stream Beancount directives directly to stdout
+empower --transactions --format beancount
+```
+
+### 4. Offline Sandbox Mode
 
 Test the CLI without entering credentials or making network requests:
 
 ```bash
 empower --sandbox --all --csv
+empower --sandbox --all --beancount --output-beancount ./ledger/
 ```
 
 ---

@@ -23,15 +23,17 @@ empower-personal-dashboard/
 │   ├── models.py             # Strongly typed dataclasses for financial payloads
 │   ├── sanitizers.py         # Unicode text sanitization (\ufffd stripping, normalization)
 │   ├── exceptions.py         # Domain error hierarchy (EmpowerError, 2FA, SessionExpired)
-│   ├── cli.py                # Command-line interface with formatted tables, JSON, CSV
+│   ├── beancount.py          # Pure-Python Beancount PTA export engine (directives, taxonomy, lots)
+│   ├── cli.py                # Command-line interface with formatted tables, JSON, CSV, Beancount
 │   └── mcp_server.py         # Model Context Protocol (FastMCP) server with tools & resources
 ├── docs/
-│   ├── adr/                  # Architecture Decision Records (ADR-0001, ADR-0002)
+│   ├── adr/                  # Architecture Decision Records (ADR-0001, ADR-0002, ADR-0003)
 │   └── openapi.yaml          # Formal OpenAPI 3.1 specification (canonical wire & domain contract)
 ├── tests/
 │   ├── test_client.py        # Offline client unit tests (mocked endpoints)
 │   ├── test_models.py        # Dataclass parsing and aggregation logic
 │   ├── test_sanitizers.py    # Unicode replacement and whitespace cleaning
+│   ├── test_beancount.py     # Beancount export directives, taxonomy, and lot tracking tests
 │   ├── test_cli.py           # CLI invocation, formatting, and sandbox tests
 │   ├── test_mcp_server.py    # FastMCP tools, error handling, and caching tests
 │   └── test_openapi_contract.py # OpenAPI 3.1 contract and schema validation tests

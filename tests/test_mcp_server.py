@@ -481,6 +481,24 @@ class TestMCPServer(unittest.TestCase):
                     self.assertTrue((dest / "empower_balances.json").exists())
                     self.assertFalse((dest / "empower_balances.csv").exists())
 
+            # Export with Beancount enabled
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with patch.dict(os.environ, {"EMPOWER_EXPORT_ROOT": tmpdir}):
+                    res_bean = await self.server.call_tool(
+                        "export_data",
+                        {"destination_dir": tmpdir, "scope": "all", "export_csv": False, "export_beancount": True},
+                    )
+                    payload_bean = json.loads(res_bean.content[0].text)
+                    self.assertEqual(payload_bean["status"], "success")
+                    dest = Path(tmpdir)
+                    self.assertTrue((dest / "ledger" / "main.bean").exists())
+                    self.assertTrue((dest / "ledger" / "accounts.bean").exists())
+
+            # Verify get_export_options tool contains beancount
+            res_options = await self.server.call_tool("get_export_options", {})
+            payload_options = json.loads(res_options.content[0].text)
+            self.assertIn("beancount", payload_options["supported_formats"])
+
         asyncio.run(run_check())
 
     def test_resources_and_prompts(self) -> None:
@@ -494,6 +512,14 @@ class TestMCPServer(unittest.TestCase):
 
             res_export = await self.server.read_resource("empower://export/options")
             self.assertIn("Export Options", str(res_export))
+            self.assertIn("Beancount", str(res_export))
+
+            # Read Beancount resources
+            res_prices = await self.server.read_resource("empower://beancount/prices")
+            self.assertIn("price", str(res_prices))
+
+            res_bean_bal = await self.server.read_resource("empower://beancount/balances")
+            self.assertIn("balance", str(res_bean_bal))
 
             # Get prompts
             prompt_res = await self.server.get_prompt("portfolio_review", {"risk_profile": "aggressive"})
