@@ -80,7 +80,7 @@ This repository adheres to strict Test-Driven Development as mandated by the org
   PYTHONPATH=. python3 -m unittest tests/test_openapi_contract.py
 
   # Validate OpenAPI 3.1 specification syntax and rules
-  npx @redocly/cli lint docs/openapi.yaml
+  npx --yes @redocly/cli lint docs/openapi.yaml
 
   # Byte-compile syntax and import verification
   python3 -m compileall empower_personal_dashboard tests
@@ -119,7 +119,7 @@ The repository adheres to formal API contract specifications as defined in [ADR-
 - **Canonical Specification:** `docs/openapi.yaml` (mirrored via root `openapi.yaml`) serves as the authoritative interface contract for all upstream RPC-over-HTTP endpoints and canonical domain models.
 - **Two-Tier Architecture:**
   - **Tier 1 (Upstream Wire Protocol):** Documents the reverse-engineered HTTP POST endpoints, `spHeader` status/error envelopes, session cookies (`JSESSIONID`), and CSRF tokens (`X-CSRF`).
-  - **Tier 2 (Domain Schemas):** Defines normalized schemas matching the Python dataclasses (`DashboardBalances`, `Holding`, `Transaction`, `NetWorthSummary`) used by the CLI and MCP server.
-- **CI Enforcement:** Continuous integration runs `npx @redocly/cli lint docs/openapi.yaml` to ensure zero schema errors or rule violations on every commit and PR.
+  - **Tier 2 (Domain Schemas):** Defines normalized schemas matching the Python domain models (`DashboardBalances`, `AccountBalance`, `DashboardHoldings`, `InvestmentHolding`, `DashboardTransactions`, `Transaction`) and the `NetWorthSummary` summary payload used by the CLI and MCP server.
+- **CI Enforcement:** Continuous integration runs `npx --yes @redocly/cli@2.57.0 lint docs/openapi.yaml` to ensure zero schema errors or rule violations on every commit and PR.
 - **Hermetic Contract Tests:** `tests/test_openapi_contract.py` validates synthetic test fixtures against OpenAPI schemas offline in under 1 second without network access.
 - **Zero-PII Examples:** All examples, schemas, and default values in the OpenAPI specification MUST strictly use synthetic placeholders.
