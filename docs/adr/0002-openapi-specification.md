@@ -32,7 +32,7 @@ We decided to adopt **OpenAPI 3.1** as the formal interface specification format
    - OpenAPI 3.1 is 100% dialect-compatible with JSON Schema (Draft 2020-12), enabling direct alignment with FastMCP tool schemas in [`mcp_server.py`](../../empower_personal_dashboard/mcp_server.py) and typed dataclasses in [`models.py`](../../empower_personal_dashboard/models.py).
 
 2. **Two-Tier Specification Scope:**
-   - **Tier 1 (Upstream Wire RPC Specification):** Models the reverse-engineered HTTP POST endpoints (`/api/login/identifyUser`, `/api/login/authenticatePassword`, `/api/credential/challengeSms`, `/api/newaccount/getAccounts2`, `/api/invest/getHoldings`, `/api/transaction/getUserTransactions2`). Captures stateful cookie headers (`JSESSIONID`), CSRF tokens (`pm-csrf`), and the standardized Empower response envelope:
+   - **Tier 1 (Upstream Wire RPC Specification):** Models the reverse-engineered HTTP POST endpoints (`/api/login/identifyUser`, `/api/credential/authenticatePassword`, `/api/credential/challengeSms`, `/api/credential/authenticateSms`, `/api/newaccount/getAccounts`, `/api/invest/getHoldings`, `/api/transaction/getUserTransactions`). Captures stateful cookie headers (`JSESSIONID`), CSRF tokens (`X-CSRF`), and the standardized Empower response envelope:
      ```json
      {
        "spHeader": {
@@ -43,7 +43,7 @@ We decided to adopt **OpenAPI 3.1** as the formal interface specification format
        "spData": { ... }
      }
      ```
-   - **Tier 2 (Domain & Aggregation Schemas):** Defines canonical component schemas representing the clean, sanitized domain models ([`DashboardBalances`](../../empower_personal_dashboard/models.py), [`Holding`](../../empower_personal_dashboard/models.py), [`Transaction`](../../empower_personal_dashboard/models.py), [`NetWorthSummary`](../../empower_personal_dashboard/models.py)) exposed by the CLI and MCP server.
+   - **Tier 2 (Domain & Aggregation Schemas):** Defines canonical component schemas representing the clean, sanitized domain models ([`AccountBalance`](../../empower_personal_dashboard/models.py), [`DashboardBalances`](../../empower_personal_dashboard/models.py), [`InvestmentHolding`](../../empower_personal_dashboard/models.py), [`DashboardHoldings`](../../empower_personal_dashboard/models.py), [`Transaction`](../../empower_personal_dashboard/models.py), [`DashboardTransactions`](../../empower_personal_dashboard/models.py)) and payload schemas (`NetWorthSummary`) exposed by the CLI and MCP server.
 
 3. **Continuous OpenAPI Validation in CI:**
    - Integrate an automated OpenAPI 3.1 validator directly into GitHub Actions (`.github/workflows/ci.yml`).

@@ -76,7 +76,7 @@ This repository adheres to strict Test-Driven Development as mandated by the org
   # Run all unit tests
   PYTHONPATH=. python3 -m unittest discover tests
 
-  # Run OpenAPI contract tests specifically
+  # Run OpenAPI contract tests specifically (prerequisite: pip install -e ".[test]")
   PYTHONPATH=. python3 -m unittest tests/test_openapi_contract.py
 
   # Validate OpenAPI 3.1 specification syntax and rules
