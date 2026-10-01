@@ -313,7 +313,12 @@ def render_balances_table(balances: DashboardBalances) -> str:
     return f"{divider}\n{md}\n{divider}"
 
 
-def render_holdings_markdown(holdings: DashboardHoldings, limit: Optional[int] = 25) -> str:
+def render_holdings_markdown(
+    holdings: DashboardHoldings,
+    limit: Optional[int] = 25,
+    preserve_order: bool = False,
+) -> str:
+    title_suffix = "" if preserve_order else " by Value"
     lines = [
         f"### Empower Personal Dashboard Holdings ({holdings.as_of_date})",
         "",
@@ -321,13 +326,13 @@ def render_holdings_markdown(holdings: DashboardHoldings, limit: Optional[int] =
         f"- **Total Portfolio Value**: **{format_currency(holdings.total_value)}**",
         f"- **Total Positions**: {len(holdings.holdings)}",
         "",
-        "#### Top Positions by Value",
+        f"#### Top Positions{title_suffix}",
         "",
         "| Ticker | Description | Account | Type | Shares | Price | Value | Weight | 1-Day Chg |",
         "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
     ]
 
-    sorted_holdings = sorted(holdings.holdings, key=lambda x: x.get("value", 0.0), reverse=True)
+    sorted_holdings = holdings.holdings if preserve_order else sorted(holdings.holdings, key=lambda x: x.get("value", 0.0), reverse=True)
     display_holdings = sorted_holdings[:limit] if limit else sorted_holdings
 
     for h in display_holdings:
@@ -353,8 +358,12 @@ def render_holdings_markdown(holdings: DashboardHoldings, limit: Optional[int] =
     return "\n".join(lines)
 
 
-def render_holdings_table(holdings: DashboardHoldings, limit: Optional[int] = 25) -> str:
-    md = render_holdings_markdown(holdings, limit=limit)
+def render_holdings_table(
+    holdings: DashboardHoldings,
+    limit: Optional[int] = 25,
+    preserve_order: bool = False,
+) -> str:
+    md = render_holdings_markdown(holdings, limit=limit, preserve_order=preserve_order)
     divider = "=" * 80
     return f"{divider}\n{md}\n{divider}"
 

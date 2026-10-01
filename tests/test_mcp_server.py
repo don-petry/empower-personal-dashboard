@@ -4,8 +4,10 @@ test_mcp_server.py — Unit tests for Empower Personal Dashboard FastMCP server.
 
 import asyncio
 import json
+import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -54,17 +56,22 @@ class TestMCPServer(unittest.TestCase):
             self.assertIn("get_holdings", tool_names)
             self.assertIn("get_transactions", tool_names)
             self.assertIn("check_auth_status", tool_names)
+            self.assertIn("export_data", tool_names)
+            self.assertIn("get_export_options", tool_names)
 
             resources = await self.server.list_resources()
             resource_uris = [str(r.uri) for r in resources]
             self.assertIn("empower://balances/summary", resource_uris)
             self.assertIn("empower://holdings/portfolio", resource_uris)
             self.assertIn("empower://accounts/list", resource_uris)
+            self.assertIn("empower://export/options", resource_uris)
 
             prompts = await self.server.list_prompts()
             prompt_names = [p.name for p in prompts]
             self.assertIn("portfolio_review", prompt_names)
             self.assertIn("spending_audit", prompt_names)
+            self.assertIn("recent_purchases_audit", prompt_names)
+            self.assertIn("top_holdings_review", prompt_names)
 
         asyncio.run(run_check())
 
@@ -82,6 +89,19 @@ class TestMCPServer(unittest.TestCase):
             self.assertGreater(payload["total_investment"], 0)
             self.assertEqual(payload["accounts_count"], 5)
 
+            # Markdown format
+            res_md = await self.server.call_tool("get_net_worth_summary", {"format": "markdown"})
+            payload_md = json.loads(res_md.content[0].text)
+            self.assertIn("formatted_output", payload_md)
+            self.assertIn("### Empower Net Worth Summary", payload_md["formatted_output"])
+
+            # Table format
+            res_tbl = await self.server.call_tool("get_net_worth_summary", {"format": "table"})
+            payload_tbl = json.loads(res_tbl.content[0].text)
+            self.assertIn("formatted_output", payload_tbl)
+            self.assertNotEqual(payload_tbl["formatted_output"], payload_md["formatted_output"])
+            self.assertIn("| Category | Amount |", payload_tbl["formatted_output"])
+
         asyncio.run(run_check())
 
     def test_tool_get_balances_with_filtering(self) -> None:
@@ -96,18 +116,33 @@ class TestMCPServer(unittest.TestCase):
             self.assertEqual(payload_all["accounts_count"], 5)
 
             # Cash filter
-            res_cash = await self.server.call_tool("get_balances", {"account_types": ["CASH"]})
+            res_cash = await self.server.call_tool("get_balances", {"account_types": ["CASH"], "format": "markdown"})
             payload_cash = json.loads(res_cash.content[0].text)
             self.assertEqual(payload_cash["status"], "success")
             self.assertEqual(payload_cash["accounts_count"], 2)
+            self.assertGreater(payload_cash["totals_by_type"]["cash"], 0)
+            self.assertEqual(payload_cash["totals_by_type"]["investment"], 0.0)
             for a in payload_cash["accounts"]:
                 self.assertEqual(a["account_type"], "BANK")
+            self.assertNotIn("Horizon 401(k)", payload_cash["formatted_output"])
 
             # Investment filter
             res_inv = await self.server.call_tool("get_balances", {"account_types": ["INVESTMENT"]})
             payload_inv = json.loads(res_inv.content[0].text)
             self.assertEqual(payload_inv["status"], "success")
             self.assertEqual(payload_inv["accounts_count"], 2)
+            self.assertGreater(payload_inv["totals_by_type"]["investment"], 0)
+            self.assertEqual(payload_inv["totals_by_type"]["cash"], 0.0)
+
+            # Markdown and table formats
+            res_md = await self.server.call_tool("get_balances", {"format": "markdown"})
+            payload_md = json.loads(res_md.content[0].text)
+            self.assertIn("formatted_output", payload_md)
+            self.assertIn("|", payload_md["formatted_output"])
+
+            res_tbl = await self.server.call_tool("get_balances", {"format": "table"})
+            payload_tbl = json.loads(res_tbl.content[0].text)
+            self.assertIn("formatted_output", payload_tbl)
 
         asyncio.run(run_check())
 
@@ -127,6 +162,46 @@ class TestMCPServer(unittest.TestCase):
             res_limit = await self.server.call_tool("get_holdings", {"limit": 1})
             payload_limit = json.loads(res_limit.content[0].text)
             self.assertEqual(payload_limit["returned_count"], 1)
+
+            # Aggregation by ticker
+            res_agg = await self.server.call_tool("get_holdings", {"aggregate_by_ticker": True})
+            payload_agg = json.loads(res_agg.content[0].text)
+            self.assertEqual(payload_agg["status"], "success")
+            for h in payload_agg["holdings"]:
+                self.assertIn("holding_percentage", h)
+                self.assertIn("accounts_count", h)
+                for acct in h.get("accounts", []):
+                    self.assertIn("user_account_id", acct)
+                    self.assertIn("account_id", acct)
+                    self.assertIsNotNone(acct["user_account_id"])
+
+            # Filter by account_id
+            res_acct = await self.server.call_tool("get_holdings", {"account_id": 1001})
+            payload_acct = json.loads(res_acct.content[0].text)
+            self.assertEqual(payload_acct["status"], "success")
+            self.assertGreaterEqual(payload_acct["matching_count"], 1)
+
+            # Sort by ticker
+            res_sort_ticker = await self.server.call_tool("get_holdings", {"sort_by": "ticker", "format": "markdown"})
+            payload_sort_ticker = json.loads(res_sort_ticker.content[0].text)
+            tickers = [h["ticker"] for h in payload_sort_ticker["holdings"]]
+            self.assertEqual(tickers, sorted(tickers))
+            self.assertIn("#### Top Positions", payload_sort_ticker["formatted_output"])
+
+            # Min value filter
+            res_min = await self.server.call_tool("get_holdings", {"min_value": 50000.0})
+            payload_min = json.loads(res_min.content[0].text)
+            for h in payload_min["holdings"]:
+                self.assertGreaterEqual(h["value"], 50000.0)
+
+            # Formats
+            res_md = await self.server.call_tool("get_holdings", {"format": "markdown"})
+            payload_md = json.loads(res_md.content[0].text)
+            self.assertIn("formatted_output", payload_md)
+
+            res_tbl = await self.server.call_tool("get_holdings", {"format": "table"})
+            payload_tbl = json.loads(res_tbl.content[0].text)
+            self.assertIn("formatted_output", payload_tbl)
 
         asyncio.run(run_check())
 
@@ -148,6 +223,60 @@ class TestMCPServer(unittest.TestCase):
             res_cat = await self.server.call_tool("get_transactions", {"category": "payroll"})
             payload_cat = json.loads(res_cat.content[0].text)
             self.assertEqual(payload_cat["status"], "success")
+
+            # Relative days filter
+            res_days = await self.server.call_tool("get_transactions", {"days": 30})
+            payload_days = json.loads(res_days.content[0].text)
+            self.assertEqual(payload_days["status"], "success")
+            self.assertGreater(payload_days["returned_count"], 0)
+            now_utc = datetime.now(timezone.utc)
+            min_date = (now_utc - timedelta(days=30)).strftime("%Y-%m-%d")
+            for tx in payload_days["transactions"]:
+                self.assertGreaterEqual(tx["transaction_date"], min_date)
+
+            # Negative days error check
+            res_neg = await self.server.call_tool("get_transactions", {"days": -5})
+            payload_neg = json.loads(res_neg.content[0].text)
+            self.assertEqual(payload_neg["status"], "error")
+            self.assertEqual(payload_neg["error_code"], "INVALID_ARGUMENT")
+
+            # Spending only filter with cashflow recalculation
+            res_spending = await self.server.call_tool("get_transactions", {"spending_only": True})
+            payload_spending = json.loads(res_spending.content[0].text)
+            self.assertEqual(payload_spending["status"], "success")
+            self.assertIn("period_net_cashflow", payload_spending)
+            for tx in payload_spending["transactions"]:
+                self.assertTrue(tx["is_spending"])
+            self.assertLessEqual(payload_spending["net_cashflow"], 0)
+
+            # Income only filter
+            res_income = await self.server.call_tool("get_transactions", {"income_only": True})
+            payload_income = json.loads(res_income.content[0].text)
+            self.assertEqual(payload_income["status"], "success")
+            for tx in payload_income["transactions"]:
+                self.assertTrue(tx["is_income"])
+
+            # Transaction type filter
+            res_type = await self.server.call_tool("get_transactions", {"transaction_type": "Purchase"})
+            payload_type = json.loads(res_type.content[0].text)
+            self.assertEqual(payload_type["status"], "success")
+            for tx in payload_type["transactions"]:
+                self.assertEqual(tx["transaction_type"], "Purchase")
+
+            # Min amount filter
+            res_amount = await self.server.call_tool("get_transactions", {"min_amount": 1000.0})
+            payload_amount = json.loads(res_amount.content[0].text)
+            for tx in payload_amount["transactions"]:
+                self.assertGreaterEqual(abs(tx["amount"]), 1000.0)
+
+            # Formatted output
+            res_md = await self.server.call_tool("get_transactions", {"format": "markdown"})
+            payload_md = json.loads(res_md.content[0].text)
+            self.assertIn("formatted_output", payload_md)
+
+            res_tbl = await self.server.call_tool("get_transactions", {"format": "table"})
+            payload_tbl = json.loads(res_tbl.content[0].text)
+            self.assertIn("formatted_output", payload_tbl)
 
         asyncio.run(run_check())
 
@@ -244,6 +373,116 @@ class TestMCPServer(unittest.TestCase):
 
         asyncio.run(run_check())
 
+    def test_tool_get_export_options(self) -> None:
+        if not self._require_server():
+            return
+
+        async def run_check() -> None:
+            res = await self.server.call_tool("get_export_options", {})
+            self.assertFalse(res.is_error)
+            payload = json.loads(res.content[0].text)
+            self.assertEqual(payload["status"], "success")
+            self.assertIn("json", payload["supported_formats"])
+            self.assertIn("csv", payload["supported_formats"])
+            self.assertIn("all", payload["data_scopes"])
+            self.assertIn("bulk_export_csv", payload["cli_examples"])
+            self.assertIn("export_data", payload["mcp_export_tool"])
+
+        asyncio.run(run_check())
+
+    def test_tool_export_data(self) -> None:
+        if not self._require_server():
+            return
+
+        async def run_check() -> None:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with patch.dict(os.environ, {"EMPOWER_EXPORT_ROOT": tmpdir}):
+                    res = await self.server.call_tool(
+                        "export_data",
+                        {"destination_dir": tmpdir, "scope": "all", "export_csv": True},
+                    )
+                    self.assertFalse(res.is_error)
+                    payload = json.loads(res.content[0].text)
+                    self.assertEqual(payload["status"], "success")
+                    self.assertEqual(payload["files_count"], 6)
+
+                    dest = Path(tmpdir)
+                    self.assertTrue((dest / "empower_balances.json").exists())
+                    self.assertTrue((dest / "empower_balances.csv").exists())
+                    self.assertTrue((dest / "empower_holdings.json").exists())
+                    self.assertTrue((dest / "empower_holdings.csv").exists())
+                    self.assertTrue((dest / "empower_transactions.jsonl").exists())
+                    self.assertTrue((dest / "empower_transactions.csv").exists())
+
+                    # Invalid scope validation
+                    res_inv_scope = await self.server.call_tool(
+                        "export_data",
+                        {"destination_dir": tmpdir, "scope": "invalid_scope"},
+                    )
+                    payload_inv_scope = json.loads(res_inv_scope.content[0].text)
+                    self.assertEqual(payload_inv_scope["status"], "error")
+                    self.assertEqual(payload_inv_scope["error_code"], "INVALID_ARGUMENT")
+
+                    # Path traversal outside EMPOWER_EXPORT_ROOT
+                    outside_dir = str(Path(tmpdir).parent / "unauthorized_export_dir")
+                    res_outside = await self.server.call_tool(
+                        "export_data",
+                        {"destination_dir": outside_dir, "scope": "all"},
+                    )
+                    payload_outside = json.loads(res_outside.content[0].text)
+                    self.assertEqual(payload_outside["status"], "error")
+                    self.assertEqual(payload_outside["error_code"], "ACCESS_DENIED")
+
+                    # Symlinked destination directory rejection
+                    sym_dir = dest / "symlink_dir"
+                    try:
+                        sym_dir.symlink_to(dest)
+                        res_sym = await self.server.call_tool(
+                            "export_data",
+                            {"destination_dir": str(sym_dir), "scope": "balances"},
+                        )
+                        payload_sym = json.loads(res_sym.content[0].text)
+                        self.assertEqual(payload_sym["status"], "error")
+                        self.assertEqual(payload_sym["error_code"], "ACCESS_DENIED")
+                    finally:
+                        if sym_dir.is_symlink():
+                            sym_dir.unlink()
+
+                    # Symlinked target file rejection
+                    sym_target = dest / "sub_export"
+                    sym_target.mkdir()
+                    dummy_target = dest / "dummy.json"
+                    dummy_target.write_text("{}")
+                    target_link = sym_target / "empower_balances.json"
+                    try:
+                        target_link.symlink_to(dummy_target)
+                        res_file_sym = await self.server.call_tool(
+                            "export_data",
+                            {"destination_dir": str(sym_target), "scope": "balances"},
+                        )
+                        payload_file_sym = json.loads(res_file_sym.content[0].text)
+                        self.assertEqual(payload_file_sym["status"], "error")
+                        self.assertEqual(payload_file_sym["error_code"], "ACCESS_DENIED")
+                    finally:
+                        if target_link.is_symlink():
+                            target_link.unlink()
+
+            # Specific scope without CSV
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with patch.dict(os.environ, {"EMPOWER_EXPORT_ROOT": tmpdir}):
+                    res_bal = await self.server.call_tool(
+                        "export_data",
+                        {"destination_dir": tmpdir, "scope": "balances", "export_csv": False},
+                    )
+                    payload_bal = json.loads(res_bal.content[0].text)
+                    self.assertEqual(payload_bal["status"], "success")
+                    self.assertEqual(payload_bal["files_count"], 1)
+                    dest = Path(tmpdir)
+                    self.assertTrue((dest / "empower_balances.json").exists())
+                    self.assertFalse((dest / "empower_balances.csv").exists())
+
+        asyncio.run(run_check())
+
     def test_resources_and_prompts(self) -> None:
         if not self._require_server():
             return
@@ -253,10 +492,19 @@ class TestMCPServer(unittest.TestCase):
             res_content = await self.server.read_resource("empower://balances/summary")
             self.assertTrue(len(res_content) > 0)
 
-            # Get prompt
+            res_export = await self.server.read_resource("empower://export/options")
+            self.assertIn("Export Options", str(res_export))
+
+            # Get prompts
             prompt_res = await self.server.get_prompt("portfolio_review", {"risk_profile": "aggressive"})
             self.assertIn("portfolio review", prompt_res.messages[0].content.text)
             self.assertIn("aggressive", prompt_res.messages[0].content.text)
+
+            prompt_purchases = await self.server.get_prompt("recent_purchases_audit", {"days": 14})
+            self.assertIn("14 days", prompt_purchases.messages[0].content.text)
+
+            prompt_top_holdings = await self.server.get_prompt("top_holdings_review", {"limit": 5})
+            self.assertIn("top 5 investment holdings", prompt_top_holdings.messages[0].content.text)
 
         asyncio.run(run_check())
 
