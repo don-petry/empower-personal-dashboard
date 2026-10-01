@@ -71,13 +71,11 @@ sequenceDiagram
 
 | Tool Name | Parameters | Return Schema | Purpose |
 | :--- | :--- | :--- | :--- |
-| `get_net_worth_summary` | `format: str = "json"` | `{ net_worth, total_cash, total_investment, total_credit, total_mortgage, total_loan, formatted_output? }` | Lightweight summary (~100 tokens) minimizing context consumption. Supports Markdown and Table formats. |
-| `get_balances` | `account_types: list[str] = None`<br>`include_inactive: bool = False`<br>`format: str = "json"` | `{ accounts: [...], totals_by_type: {...}, formatted_output? }` | Full per-account balance breakdown with masked account numbers and formatted rendering. |
-| `get_holdings` | `ticker: str = None`<br>`account_id: int = None`<br>`aggregate_by_ticker: bool = False`<br>`sort_by: str = "value"`<br>`min_value: float = 0.0`<br>`limit: int = 50`<br>`format: str = "json"` | `{ total_portfolio_value, holdings: [...], matching_count, returned_count, formatted_output? }` | Security positions with quantity, price, cost basis, percentage weight, cross-account aggregation, and sorting. |
-| `get_transactions` | `start_date: str = None`<br>`end_date: str = None`<br>`days: int = None`<br>`account_id: int = None`<br>`category: str = None`<br>`spending_only: bool = False`<br>`income_only: bool = False`<br>`transaction_type: str = None`<br>`min_amount: float = None`<br>`max_amount: float = None`<br>`limit: int = 50`<br>`format: str = "json"` | `{ total_transactions, net_cashflow, transactions: [...], formatted_output? }` | Filtered transaction history with relative lookback (`days`), strict spending/income filters, transaction type filtering, and pagination guardrails. |
-| `export_data` | `destination_dir: str = "./data"`<br>`scope: str = "all"`<br>`export_csv: bool = True`<br>`start_date: str = None`<br>`end_date: str = None`<br>`limit: int = None` | `{ status, destination_dir, scope, files_count, files: [...], summary }` | Programmatic bulk data export to disk in JSON, JSONL, and companion CSV files (matching CLI `empower --all --csv`). |
-| `get_export_options` | None | `{ supported_formats: [...], data_scopes: [...], cli_examples: {...}, mcp_export_tool: str }` | Discovery tool for export capabilities, CLI commands, and destination configurations. |
-| `check_auth_status` | None | `{ authenticated: bool, session_path: str, status: str, message: str }` | Healthcheck tool allowing agents to verify session viability before planning. |
+| `get_net_worth_summary` | None | `{ net_worth, total_cash, total_investment, total_credit, total_mortgage, total_loan }` | Lightweight summary (~100 tokens) minimizing context consumption. |
+| `get_balances` | `account_types: list[str] = None`<br>`include_inactive: bool = False` | `{ accounts: [...], totals_by_type: {...} }` | Full per-account balance breakdown with masked account numbers. |
+| `get_holdings` | `ticker: str = None`<br>`account_id: int = None`<br>`limit: int = 50` | `{ total_value, holdings: [...], count }` | Security positions with quantity, price, cost basis, and percentage weight. |
+| `get_transactions` | `start_date: str = None`<br>`end_date: str = None`<br>`account_id: int = None`<br>`category: str = None`<br>`limit: int = 50` | `{ total_transactions, net_cashflow, transactions: [...] }` | Filtered transaction history with pagination guardrails. |
+| `check_auth_status` | None | `{ authenticated: bool, username: str, expires_estimate: str }` | Healthcheck tool allowing agents to verify session viability before planning. |
 
 ### MCP Resources & Prompts
 
@@ -85,12 +83,9 @@ sequenceDiagram
   - `empower://balances/summary` (Dynamic application state snapshot)
   - `empower://holdings/portfolio` (Current portfolio asset allocation)
   - `empower://accounts/list` (Linked institution metadata)
-  - `empower://export/options` (Documentation of export options, formats, and CLI flags Markdown)
 * **Prompts:**
   - `portfolio_review`: Pre-engineered analysis for asset allocation, drift, and cash drag.
   - `spending_audit`: Structured cashflow audit analyzing monthly burn and recurring subscriptions.
-  - `recent_purchases_audit`: Retail spending, credit card charges, and subscription audit over past N days.
-  - `top_holdings_review`: Consolidates and audits top investment holdings across all accounts.
 
 ---
 

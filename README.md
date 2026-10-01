@@ -194,24 +194,14 @@ uvx --from "empower-personal-dashboard[mcp]" empower-mcp
 
 | Tool | Parameters | Description |
 | :--- | :--- | :--- |
-| `get_net_worth_summary` | `format` | Ultra-lightweight summary (net worth, cash, investments, credit/debt, loans) minimizing LLM context (~100 tokens). Supports `format='json'`, `'markdown'`, or `'table'`. |
-| `get_balances` | `account_types`, `include_inactive`, `format` | Per-account balances grouped by type (`CASH`, `INVESTMENT`, `CREDIT`, etc.) with masked account numbers and optional Markdown/Table rendering. |
-| `get_holdings` | `ticker`, `account_id`, `aggregate_by_ticker`, `sort_by`, `min_value`, `limit`, `format` | Security-level positions, quantities, prices, cost basis, and allocations. Supports cross-account ticker consolidation (`aggregate_by_ticker=True`), sorting, threshold filtering, and pre-formatted tables. |
-| `get_transactions` | `start_date`, `end_date`, `days`, `account_id`, `category`, `spending_only`, `income_only`, `transaction_type`, `min_amount`, `max_amount`, `limit`, `format` | Account activity filtered by absolute date or relative lookback (`days=1`, `days=7`), strict spending/income filters, transaction types, min/max amounts, and Markdown/Table rendering. |
-| `export_data` | `destination_dir`, `scope`, `export_csv`, `start_date`, `end_date`, `limit` | Programmatically export balances, holdings, and transactions to disk in JSON, JSONL, and companion CSV files (matching CLI `empower --all --csv`). |
-| `get_export_options` | None | Discover supported export formats, scopes, CLI flags, and usage commands. |
+| `get_net_worth_summary` | None | Ultra-lightweight summary (net worth, cash, investments, credit/debt, loans) minimizing LLM context (~100 tokens). |
+| `get_balances` | `account_types`, `include_inactive` | Per-account balances grouped by type (`CASH`, `INVESTMENT`, `CREDIT`, etc.) with masked account numbers. |
+| `get_holdings` | `ticker`, `account_id`, `limit` | Security-level positions, quantities, prices, cost basis, and percentage allocations. |
+| `get_transactions` | `start_date`, `end_date`, `account_id`, `category`, `limit` | Historical transactions filtered by date range or category with pagination caps. |
 | `check_auth_status` | None | Health check verifying that local session authentication is active. |
 
-* **Resources:**
-  - `empower://balances/summary` (Real-time net worth and asset class totals JSON)
-  - `empower://holdings/portfolio` (Portfolio positions JSON)
-  - `empower://accounts/list` (Linked accounts list JSON)
-  - `empower://export/options` (Documentation of export options, formats, and CLI flags Markdown)
-* **Prompts:**
-  - `portfolio_review`: Audits asset allocation, equity vs fixed-income balance, and cash drag.
-  - `spending_audit`: Cashflow and spending audit over past N days.
-  - `recent_purchases_audit`: Reviews retail purchases, credit card charges, and subscriptions over past N days.
-  - `top_holdings_review`: Consolidates and reviews top investment holdings across all accounts.
+* **Resources:** `empower://balances/summary`, `empower://holdings/portfolio`, `empower://accounts/list`
+* **Prompts:** `portfolio_review` (audits asset allocation and cash drag), `spending_audit` (analyzes monthly burn rate)
 
 ### Testing in Offline Sandbox Mode
 
