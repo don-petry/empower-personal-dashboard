@@ -7,4 +7,3 @@ This directory documents key architectural decisions for **`empower-personal-das
 | ADR | Title | Status | Date |
 | :--- | :--- | :--- | :--- |
 | [ADR-0001](0001-mcp-server-architecture.md) | Model Context Protocol (MCP) Server Architecture & Implementation | Accepted | 2026-09-30 |
-| [ADR-0002](0002-openapi-specification.md) | OpenAPI 3.1 Specification & Contract Testing Architecture | Proposed | 2026-10-01 |
