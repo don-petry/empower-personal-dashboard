@@ -172,6 +172,31 @@ def parse_args() -> argparse.Namespace:
         help="Explicitly append exported Beancount directives to an existing ledger file.",
     )
     parser.add_argument(
+        "--from-data-dir",
+        "--input-dir",
+        type=Path,
+        default=None,
+        help="Path to directory containing existing empower_balances.json, empower_holdings.json, empower_transactions.jsonl to process offline.",
+    )
+    parser.add_argument(
+        "--input-balances",
+        type=Path,
+        default=None,
+        help="Path to existing balances JSON snapshot to load offline.",
+    )
+    parser.add_argument(
+        "--input-holdings",
+        type=Path,
+        default=None,
+        help="Path to existing holdings JSON snapshot to load offline.",
+    )
+    parser.add_argument(
+        "--input-transactions",
+        type=Path,
+        default=None,
+        help="Path to existing transactions JSON or JSONL snapshot to load offline.",
+    )
+    parser.add_argument(
         "--email",
         "--username",
         type=str,
@@ -551,17 +576,55 @@ def main() -> int:
     # Keep progress and informational messages out of stdout when emitting Beancount directives
     progress_file = sys.stderr if getattr(args, "format", None) == "beancount" else None
 
-    # Determine execution mode
-    has_session = args.session_file.exists()
-    if not has_session and not args.sandbox:
-        if not args.quiet:
-            print(f"[*] No session file found at {args.session_file}.", file=progress_file)
-            print("[*] Defaulting to sandbox/mock mode. Run with '--login' to connect live.", file=progress_file)
-        client.mock_mode = True
+    # Determine offline data loading vs live API execution
+    input_dir = getattr(args, "from_data_dir", None)
+    in_balances_file = getattr(args, "input_balances", None)
+    in_holdings_file = getattr(args, "input_holdings", None)
+    in_transactions_file = getattr(args, "input_transactions", None)
 
-    if not args.quiet:
-        mode_label = "SANDBOX / MOCK MODE" if client.mock_mode else "LIVE"
-        print(f"[*] Querying Empower Personal Dashboard [{mode_label}]...", file=progress_file)
+    if input_dir:
+        input_dir = Path(input_dir).expanduser().resolve()
+        if not input_dir.exists():
+            print(f"[!] Error: Data directory not found: {input_dir}", file=sys.stderr)
+            return 1
+        if not in_balances_file:
+            for cand in [input_dir / "empower_balances.json", input_dir / "balances.json"]:
+                if cand.exists():
+                    in_balances_file = cand
+                    break
+        if not in_holdings_file:
+            for cand in [input_dir / "empower_holdings.json", input_dir / "holdings.json"]:
+                if cand.exists():
+                    in_holdings_file = cand
+                    break
+        if not in_transactions_file:
+            for cand in [
+                input_dir / "empower_transactions.jsonl",
+                input_dir / "empower_transactions.json",
+                input_dir / "transactions.jsonl",
+                input_dir / "transactions.json",
+            ]:
+                if cand.exists():
+                    in_transactions_file = cand
+                    break
+
+    offline_mode = bool(in_balances_file or in_holdings_file or in_transactions_file)
+
+    if offline_mode:
+        if not args.quiet:
+            print(f"[*] Processing offline financial datasets...", file=progress_file)
+    else:
+        # Determine execution mode
+        has_session = args.session_file.exists()
+        if not has_session and not args.sandbox:
+            if not args.quiet:
+                print(f"[*] No session file found at {args.session_file}.", file=progress_file)
+                print("[*] Defaulting to sandbox/mock mode. Run with '--login' to connect live.", file=progress_file)
+            client.mock_mode = True
+
+        if not args.quiet:
+            mode_label = "SANDBOX / MOCK MODE" if client.mock_mode else "LIVE"
+            print(f"[*] Querying Empower Personal Dashboard [{mode_label}]...", file=progress_file)
 
     do_balances = args.balances or args.all or (not args.holdings and not args.transactions)
     do_holdings = args.holdings or args.all
@@ -573,76 +636,145 @@ def main() -> int:
 
     try:
         if do_balances:
-            balances_res = client.fetch_balances()
-            b_data = balances_res.to_dict()
-            b_data["extracted_at"] = datetime.now(timezone.utc).isoformat()
-
-            if args.output:
-                args.output.parent.mkdir(parents=True, exist_ok=True)
-                with open(args.output, "w", encoding="utf-8") as f:
-                    json.dump(b_data, f, indent=2, ensure_ascii=False)
+            if in_balances_file:
+                in_p = Path(in_balances_file)
+                if not in_p.exists():
+                    print(f"[!] Balances file not found: {in_p}", file=sys.stderr)
+                    return 1
+                with open(in_p, "r", encoding="utf-8") as f:
+                    b_raw = json.load(f)
+                balances_res = DashboardBalances.from_dict(b_raw)
                 if not args.quiet:
-                    print(f"[+] Balances snapshot saved to: {args.output}", file=progress_file)
+                    print(f"[+] Loaded {len(balances_res.accounts)} account balances from: {in_p}", file=progress_file)
+            else:
+                balances_res = client.fetch_balances()
+                b_data = balances_res.to_dict()
+                b_data["extracted_at"] = datetime.now(timezone.utc).isoformat()
 
-            if args.csv and args.output:
-                csv_path = args.output.with_suffix(".csv")
-                export_balances_csv(balances_res, csv_path)
-                if not args.quiet:
-                    print(f"[+] Balances CSV saved to: {csv_path}", file=progress_file)
+                if args.output:
+                    args.output.parent.mkdir(parents=True, exist_ok=True)
+                    with open(args.output, "w", encoding="utf-8") as f:
+                        json.dump(b_data, f, indent=2, ensure_ascii=False)
+                    if not args.quiet:
+                        print(f"[+] Balances snapshot saved to: {args.output}", file=progress_file)
+
+                if args.csv and args.output:
+                    csv_path = args.output.with_suffix(".csv")
+                    export_balances_csv(balances_res, csv_path)
+                    if not args.quiet:
+                        print(f"[+] Balances CSV saved to: {csv_path}", file=progress_file)
 
         if do_holdings:
-            holdings_res = client.fetch_holdings()
-            h_data = holdings_res.to_dict()
-            h_data["extracted_at"] = datetime.now(timezone.utc).isoformat()
-
-            if args.output_holdings:
-                args.output_holdings.parent.mkdir(parents=True, exist_ok=True)
-                with open(args.output_holdings, "w", encoding="utf-8") as f:
-                    json.dump(h_data, f, indent=2, ensure_ascii=False)
+            if in_holdings_file:
+                in_h = Path(in_holdings_file)
+                if not in_h.exists():
+                    print(f"[!] Holdings file not found: {in_h}", file=sys.stderr)
+                    return 1
+                with open(in_h, "r", encoding="utf-8") as f:
+                    h_raw = json.load(f)
+                holdings_res = DashboardHoldings.from_dict(h_raw)
                 if not args.quiet:
-                    print(f"[+] Holdings snapshot saved to: {args.output_holdings}", file=progress_file)
+                    print(f"[+] Loaded {len(holdings_res.holdings)} portfolio holdings from: {in_h}", file=progress_file)
+            else:
+                holdings_res = client.fetch_holdings()
+                h_data = holdings_res.to_dict()
+                h_data["extracted_at"] = datetime.now(timezone.utc).isoformat()
 
-            if args.csv and args.output_holdings:
-                csv_path = args.output_holdings.with_suffix(".csv")
-                export_holdings_csv(holdings_res, csv_path)
-                if not args.quiet:
-                    print(f"[+] Holdings CSV saved to: {csv_path}", file=progress_file)
+                if args.output_holdings:
+                    args.output_holdings.parent.mkdir(parents=True, exist_ok=True)
+                    with open(args.output_holdings, "w", encoding="utf-8") as f:
+                        json.dump(h_data, f, indent=2, ensure_ascii=False)
+                    if not args.quiet:
+                        print(f"[+] Holdings snapshot saved to: {args.output_holdings}", file=progress_file)
+
+                if args.csv and args.output_holdings:
+                    csv_path = args.output_holdings.with_suffix(".csv")
+                    export_holdings_csv(holdings_res, csv_path)
+                    if not args.quiet:
+                        print(f"[+] Holdings CSV saved to: {csv_path}", file=progress_file)
 
         if do_transactions:
-            start_date = args.start_date or f"{datetime.now(timezone.utc).year}-01-01"
-            end_date = args.end_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            transactions_res = client.fetch_transactions(
-                start_date=start_date,
-                end_date=end_date,
-                user_account_ids=args.account_id,
-                limit=args.limit,
-            )
-            t_data = transactions_res.to_dict()
-            t_data["extracted_at"] = datetime.now(timezone.utc).isoformat()
-
-            if args.output_transactions:
-                args.output_transactions.parent.mkdir(parents=True, exist_ok=True)
-                if str(args.output_transactions).endswith(".jsonl"):
-                    with open(args.output_transactions, "w", encoding="utf-8") as f:
-                        for tx in transactions_res.transactions:
-                            f.write(json.dumps(tx, ensure_ascii=False) + "\n")
+            if in_transactions_file:
+                in_t = Path(in_transactions_file)
+                if not in_t.exists():
+                    print(f"[!] Transactions file not found: {in_t}", file=sys.stderr)
+                    return 1
+                if str(in_t).endswith(".jsonl"):
+                    tx_list = []
+                    with open(in_t, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line:
+                                tx_list.append(json.loads(line))
+                    dates = [t.get("transaction_date") for t in tx_list if t.get("transaction_date")]
+                    s_date = min(dates) if dates else "2026-01-01"
+                    e_date = max(dates) if dates else "2026-12-31"
+                    m_in = sum(float(t.get("amount", 0.0)) for t in tx_list if t.get("is_income") or t.get("is_credit"))
+                    m_out = sum(float(t.get("amount", 0.0)) for t in tx_list if t.get("is_spending") or t.get("is_cash_out"))
+                    transactions_res = DashboardTransactions(
+                        start_date=s_date,
+                        end_date=e_date,
+                        total_transactions=len(tx_list),
+                        money_in=round(m_in, 2),
+                        money_out=round(m_out, 2),
+                        net_cashflow=round(m_in - m_out, 2),
+                        transactions=tx_list,
+                        mode="historical",
+                    )
                 else:
-                    with open(args.output_transactions, "w", encoding="utf-8") as f:
-                        json.dump(t_data, f, indent=2, ensure_ascii=False)
-                if not args.quiet:
-                    print(f"[+] Transactions saved to: {args.output_transactions}", file=progress_file)
+                    with open(in_t, "r", encoding="utf-8") as f:
+                        t_raw = json.load(f)
+                    transactions_res = DashboardTransactions.from_dict(t_raw)
 
-            if args.csv and args.output_transactions:
-                csv_path = args.output_transactions.with_suffix(".csv")
-                export_transactions_csv(transactions_res, csv_path)
+                if args.start_date or args.end_date:
+                    sd = args.start_date or transactions_res.start_date
+                    ed = args.end_date or transactions_res.end_date
+                    filtered = [
+                        t for t in transactions_res.transactions
+                        if sd <= str(t.get("transaction_date", "")) <= ed
+                    ]
+                    transactions_res.transactions = filtered
+                    transactions_res.total_transactions = len(filtered)
+                    transactions_res.start_date = sd
+                    transactions_res.end_date = ed
+
                 if not args.quiet:
-                    print(f"[+] Transactions CSV saved to: {csv_path}", file=progress_file)
+                    print(f"[+] Loaded {transactions_res.total_transactions} transactions ({transactions_res.start_date} to {transactions_res.end_date}) from: {in_t}", file=progress_file)
+            else:
+                start_date = args.start_date or f"{datetime.now(timezone.utc).year}-01-01"
+                end_date = args.end_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                transactions_res = client.fetch_transactions(
+                    start_date=start_date,
+                    end_date=end_date,
+                    user_account_ids=args.account_id,
+                    limit=args.limit,
+                )
+                t_data = transactions_res.to_dict()
+                t_data["extracted_at"] = datetime.now(timezone.utc).isoformat()
+
+                if args.output_transactions:
+                    args.output_transactions.parent.mkdir(parents=True, exist_ok=True)
+                    if str(args.output_transactions).endswith(".jsonl"):
+                        with open(args.output_transactions, "w", encoding="utf-8") as f:
+                            for tx in transactions_res.transactions:
+                                f.write(json.dumps(tx, ensure_ascii=False) + "\n")
+                    else:
+                        with open(args.output_transactions, "w", encoding="utf-8") as f:
+                            json.dump(t_data, f, indent=2, ensure_ascii=False)
+                    if not args.quiet:
+                        print(f"[+] Transactions saved to: {args.output_transactions}", file=progress_file)
+
+                if args.csv and args.output_transactions:
+                    csv_path = args.output_transactions.with_suffix(".csv")
+                    export_transactions_csv(transactions_res, csv_path)
+                    if not args.quiet:
+                        print(f"[+] Transactions CSV saved to: {csv_path}", file=progress_file)
 
         if args.beancount:
             from empower_personal_dashboard.beancount import BeancountGenerator, BeancountMapper
 
             # Ensure balances are available to enrich account identities and types
-            if not balances_res:
+            if not balances_res and not offline_mode:
                 try:
                     balances_res = client.fetch_balances()
                 except Exception as e:

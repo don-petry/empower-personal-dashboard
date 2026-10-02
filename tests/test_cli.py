@@ -176,6 +176,79 @@ class TestCLI(unittest.TestCase):
         # Holdings-only format must include commodity unit balance assertions
         self.assertIn("balance Assets:", stdout_val)
 
+    def test_cli_from_data_dir_beancount_export(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "data"
+            data_dir.mkdir()
+            balances_file = data_dir / "empower_balances.json"
+            holdings_file = data_dir / "empower_holdings.json"
+            txs_file = data_dir / "empower_transactions.jsonl"
+            out_ledger = Path(tmpdir) / "ledger"
+
+            # Write synthetic offline test datasets
+            balances_file.write_text(json.dumps({
+                "as_of_date": "2026-10-01",
+                "net_worth": 100000.0,
+                "total_cash": 25000.0,
+                "total_investment": 75000.0,
+                "total_credit_card": 0.0,
+                "total_loan": 0.0,
+                "total_mortgage": 0.0,
+                "accounts": [
+                    {"account_id": "ACC1", "firm_name": "Test Firm", "account_name": "Checking", "account_type": "bank", "balance": 25000.0, "is_asset": True}
+                ],
+                "mode": "historical"
+            }), encoding="utf-8")
+
+            holdings_file.write_text(json.dumps({
+                "as_of_date": "2026-10-01",
+                "total_value": 75000.0,
+                "holdings": [
+                    {"user_account_id": 1, "account_name": "Checking", "ticker": "VTI", "quantity": 100.0, "price": 250.0, "value": 25000.0, "cost_basis": 200.0}
+                ],
+                "mode": "historical"
+            }), encoding="utf-8")
+
+            txs_file.write_text(json.dumps({
+                "user_transaction_id": "TX999",
+                "account_id": "ACC1",
+                "account_name": "Checking",
+                "transaction_date": "2026-09-30",
+                "description": "Test Paycheck",
+                "amount": 5000.0,
+                "is_credit": True,
+                "is_income": True,
+                "is_spending": False,
+                "transaction_type": "Deposit",
+                "category_id": 1,
+            }) + "\n", encoding="utf-8")
+
+            argv = [
+                "empower",
+                "--all",
+                "--from-data-dir",
+                str(data_dir),
+                "--beancount",
+                "--output-beancount",
+                str(out_ledger),
+                "--quiet",
+            ]
+
+            with patch.object(sys, "argv", argv):
+                exit_code = cli_main()
+                self.assertEqual(exit_code, 0)
+
+            self.assertTrue((out_ledger / "main.bean").exists())
+            self.assertTrue((out_ledger / "accounts.bean").exists())
+            self.assertTrue((out_ledger / "balances.bean").exists())
+            self.assertTrue((out_ledger / "holdings.bean").exists())
+            self.assertTrue((out_ledger / "prices.bean").exists())
+            self.assertTrue((out_ledger / "transactions.bean").exists())
+
+            tx_content = (out_ledger / "transactions.bean").read_text(encoding="utf-8")
+            self.assertIn("Test Paycheck", tx_content)
+            self.assertIn("^empower-tx-TX999", tx_content)
+
 
 if __name__ == "__main__":
     unittest.main()

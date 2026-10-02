@@ -63,6 +63,23 @@ class DashboardBalances:
             "mode": self.mode,
         }
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DashboardBalances":
+        return cls(
+            as_of_date=data.get("as_of_date", ""),
+            net_worth=float(data.get("net_worth", 0.0)),
+            total_cash=float(data.get("total_cash", 0.0)),
+            total_investment=float(data.get("total_investment", 0.0)),
+            total_credit_card=float(data.get("total_credit_card", 0.0)),
+            total_loan=float(data.get("total_loan", 0.0)),
+            total_mortgage=float(data.get("total_mortgage", 0.0)),
+            total_other_assets=float(data.get("total_other_assets", 0.0)),
+            total_other_liabilities=float(data.get("total_other_liabilities", 0.0)),
+            accounts=list(data.get("accounts", [])),
+            mode=data.get("mode", "historical"),
+            raw_response=data.get("raw_response"),
+        )
+
 
 @dataclass
 class InvestmentHolding:
@@ -114,6 +131,16 @@ class DashboardHoldings:
             "holdings": self.holdings,
             "mode": self.mode,
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DashboardHoldings":
+        return cls(
+            as_of_date=data.get("as_of_date", ""),
+            total_value=float(data.get("total_value", 0.0)),
+            holdings=list(data.get("holdings", [])),
+            mode=data.get("mode", "historical"),
+            raw_response=data.get("raw_response"),
+        )
 
 
 @dataclass
@@ -191,3 +218,18 @@ class DashboardTransactions:
             "transactions": self.transactions,
             "mode": self.mode,
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DashboardTransactions":
+        txs = list(data.get("transactions", []))
+        return cls(
+            start_date=data.get("start_date", ""),
+            end_date=data.get("end_date", ""),
+            total_transactions=int(data.get("total_transactions", len(txs))),
+            money_in=float(data.get("money_in", 0.0)),
+            money_out=float(data.get("money_out", 0.0)),
+            net_cashflow=float(data.get("net_cashflow", 0.0)),
+            transactions=txs,
+            mode=data.get("mode", "historical"),
+            raw_response=data.get("raw_response"),
+        )
