@@ -17,6 +17,10 @@ It follows the [AGENTS.md convention](https://agents.md/) and extends the organi
 
 ```
 empower-personal-dashboard/
+├── .github/
+│   └── workflows/
+│       ├── ci.yml            # Redocly linting & multi-version Python test matrix
+│       └── publish.yml       # PyPI Trusted Publishing (OIDC) workflow
 ├── empower_personal_dashboard/
 │   ├── __init__.py           # Public exports (Client, Models, Exceptions)
 │   ├── client.py             # Session management, 2FA bootstrap, API communication
@@ -29,6 +33,8 @@ empower-personal-dashboard/
 ├── docs/
 │   ├── adr/                  # Architecture Decision Records (ADR-0001, ADR-0002, ADR-0003)
 │   └── openapi.yaml          # Formal OpenAPI 3.1 specification (canonical wire & domain contract)
+├── scripts/
+│   └── pypi_onboard.py       # PyPI availability probe, build, and verification
 ├── tests/
 │   ├── test_client.py        # Offline client unit tests (mocked endpoints)
 │   ├── test_models.py        # Dataclass parsing and aggregation logic
@@ -36,6 +42,7 @@ empower-personal-dashboard/
 │   ├── test_beancount.py     # Beancount export directives, taxonomy, and lot tracking tests
 │   ├── test_cli.py           # CLI invocation, formatting, and sandbox tests
 │   ├── test_mcp_server.py    # FastMCP tools, error handling, and caching tests
+│   ├── test_packaging.py     # Package metadata, PyPI probe, and publish CI tests
 │   └── test_openapi_contract.py # OpenAPI 3.1 contract and schema validation tests
 ├── openapi.yaml              # Root symlink to docs/openapi.yaml
 ├── redocly.yaml              # Redocly CLI linter configuration
@@ -86,6 +93,9 @@ This repository adheres to strict Test-Driven Development as mandated by the org
 
   # Byte-compile syntax and import verification
   python3 -m compileall empower_personal_dashboard tests
+
+  # Probe PyPI status, build sdist/wheel, and run twine verification
+  python3 scripts/pypi_onboard.py --dry-run
   ```
 
 ---
@@ -125,3 +135,13 @@ The repository adheres to formal API contract specifications as defined in [ADR-
 - **CI Enforcement:** Continuous integration runs `npx --yes @redocly/cli@2.57.0 lint docs/openapi.yaml` to ensure zero schema errors or rule violations on every commit and PR.
 - **Hermetic Contract Tests:** `tests/test_openapi_contract.py` validates synthetic test fixtures against OpenAPI schemas offline in under 1 second without network access.
 - **Zero-PII Examples:** All examples, schemas, and default values in the OpenAPI specification MUST strictly use synthetic placeholders.
+
+---
+
+## 7. PyPI Trusted Publishing & Release Standards
+
+Modeled after `don-petry/brand-ops`:
+
+- **Tokenless OIDC Publishing:** Packaging and releases publish via PyPI Trusted Publishing (`id-token: write`). Never store long-lived `PYPI_TOKEN` secrets in repository settings.
+- **Pending Publisher Registration:** Before the initial release, a pending publisher must be configured at `https://pypi.org/manage/account/publishing/` for PyPI project `empower-personal-dashboard`, owner `petry-projects`, repo `empower-personal-dashboard`, workflow `publish.yml`, environment `pypi`.
+- **Dry-Run Safety:** Manual release dispatches via `.github/workflows/publish.yml` default to `dry_run: true` so packages can be built, inspected, and validated with `twine check` before releasing.

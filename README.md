@@ -1,6 +1,7 @@
 # Empower Personal Dashboard (`empower-personal-dashboard`)
 
 [![CI](https://github.com/petry-projects/empower-personal-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/petry-projects/empower-personal-dashboard/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/empower-personal-dashboard.svg)](https://pypi.org/project/empower-personal-dashboard/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -41,6 +42,7 @@ This library provides full programmatic and CLI access to:
   - [Two-Tier Architecture](#two-tier-architecture)
   - [Local Validation & Preview](#local-validation--preview)
 - [Architecture & Authentication Lifecycle](#architecture--authentication-lifecycle)
+- [PyPI Packaging & Automated Publishing](#pypi-packaging--automated-publishing)
 - [Security & Privacy Model](#security--privacy-model)
 - [Development & Testing](#development--testing)
 - [Contributing & Agent Standards](#contributing--agent-standards)
@@ -49,6 +51,24 @@ This library provides full programmatic and CLI access to:
 ---
 
 ## Installation
+
+### From PyPI
+
+```bash
+# Core package and CLI
+pip install empower-personal-dashboard
+
+# With Model Context Protocol (MCP) agent support:
+pip install "empower-personal-dashboard[mcp]"
+
+# With Beancount Plain-Text Accounting export support:
+pip install "empower-personal-dashboard[beancount]"
+
+# With all optional dependencies:
+pip install "empower-personal-dashboard[all]"
+```
+
+### From Source (Local Development)
 
 ```bash
 # Clone and install locally in editable mode
@@ -312,6 +332,44 @@ sequenceDiagram
     CLI->>Disk: Write JSON, JSONL, and CSV datasets
     end
 ```
+
+---
+
+## PyPI Packaging & Automated Publishing
+
+`empower-personal-dashboard` adopts the automated, tokenless **PyPI Trusted Publishing (OIDC)** approach pioneered in [`don-petry/brand-ops`](https://github.com/don-petry/brand-ops).
+
+### 1. Tokenless Trusted Publishing Architecture
+
+Releases publish directly from GitHub Actions without storing long-lived, sensitive API tokens:
+- GitHub Actions exchanges its cryptographic OIDC ID token with PyPI for a short-lived upload token.
+- PyPI validates the repository (`petry-projects/empower-personal-dashboard`), workflow (`publish.yml`), and environment (`pypi`).
+
+### 2. Onboarding Steps (First Release Setup)
+
+Before publishing the first release, the account owner registers a **Pending Publisher** on PyPI:
+1. Log in to [pypi.org/manage/account/publishing/](https://pypi.org/manage/account/publishing/).
+2. Under **"Add a pending publisher"**, enter:
+   - **PyPI Project Name:** `empower-personal-dashboard`
+   - **Owner:** `petry-projects`
+   - **Repository name:** `empower-personal-dashboard`
+   - **Workflow name:** `publish.yml`
+   - **Environment name:** `pypi`
+3. Click **"Add publisher"**.
+
+### 3. Local Onboarding & Verification
+
+Run the onboarding tool to inspect registry availability, build the sdist and wheel, and verify package metadata:
+
+```bash
+# Probe PyPI status, build sdist/wheel, and run twine verification
+python scripts/pypi_onboard.py
+```
+
+### 4. Automated Publishing Workflow
+
+- **Automatic:** Creating a GitHub Release automatically builds and publishes packages to PyPI via `.github/workflows/publish.yml`.
+- **Manual Trigger (with Dry Run):** You can also run the workflow manually via `workflow_dispatch` with `dry_run: true` (default) to test artifact generation without releasing.
 
 ---
 
