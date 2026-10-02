@@ -421,7 +421,12 @@ class BeancountGenerator:
             ";; Linked Institution Accounts & Pads\n"
         ]
 
-        seen_accounts: Set[str] = set()
+        seen_accounts: Set[str] = {
+            "Equity:Opening-Balances",
+            "Equity:Transfers",
+            "Expenses:Uncategorized",
+            "Income:Uncategorized",
+        }
         acct_lookup = _build_account_lookup(balances)
 
         # Collect accounts that hold commodities from holdings
@@ -452,6 +457,7 @@ class BeancountGenerator:
                 acct_id = str(acct.get("account_id") or "")
                 acct_type = acct.get("account_type") or "bank"
                 curr = acct.get("currency") or "USD"
+                raw_bal = float(acct.get("balance", 0.0))
 
                 b_account = self.mapper.resolve_account(firm, name, acct_id, acct_type)
                 if b_account not in seen_accounts:
@@ -463,7 +469,8 @@ class BeancountGenerator:
                         lines.append(f"2000-01-01 open {b_account}\n")
                     else:
                         lines.append(f"2000-01-01 open {b_account} {curr}\n")
-                    lines.append(f"2000-01-01 pad {b_account} Equity:Opening-Balances\n")
+                    if abs(raw_bal) > 0.001:
+                        lines.append(f"2000-01-01 pad {b_account} Equity:Opening-Balances\n")
 
         # 2. Accounts from holdings
         if holdings and holdings.holdings:
@@ -559,6 +566,26 @@ class BeancountGenerator:
 
         acct_lookup = _build_account_lookup(balances)
 
+        # Collect accounts that hold commodities from holdings
+        commodity_accounts: Set[str] = set()
+        if holdings and holdings.holdings:
+            for h in holdings.holdings:
+                uaid = str(h.get("user_account_id") or "")
+                h_name = h.get("account_name") or ""
+                acct_info = acct_lookup.get(uaid) or acct_lookup.get(h_name)
+                if acct_info:
+                    h_firm = acct_info.get("firm_name") or "Brokerage"
+                    acct_name = acct_info.get("account_name") or h_name or "Brokerage"
+                    h_type = acct_info.get("account_type") or "investment"
+                    h_id = str(acct_info.get("account_id") or uaid)
+                else:
+                    h_firm = h.get("firm_name") or "Brokerage"
+                    acct_name = h_name or "Brokerage"
+                    h_type = "investment"
+                    h_id = uaid
+                b_acct = self.mapper.resolve_account(h_firm, acct_name, h_id, h_type, is_asset=True)
+                commodity_accounts.add(b_acct)
+
         if balances and balances.accounts:
             as_of = balances.as_of_date
             lines.append(f";; Cash & Liability Balances (as of {as_of})\n")
@@ -572,8 +599,15 @@ class BeancountGenerator:
                 raw_bal = float(acct.get("balance", 0.0))
 
                 b_account = self.mapper.resolve_account(firm, name, acct_id, acct_type)
+                # If account holds commodities, its total balance is portfolio value rather than USD cash.
+                # Commodity positions are asserted separately below to avoid double-counting.
+                if b_account in commodity_accounts:
+                    continue
+
                 # In Beancount, liabilities (credit cards, loans, mortgages) are represented as negative balances
                 bal_amt = raw_bal if is_asset else -abs(raw_bal)
+                if abs(bal_amt) > 0.001:
+                    lines.append(f"2020-01-01 pad {b_account} Equity:Opening-Balances\n")
                 lines.append(f"{as_of} balance {b_account} {bal_amt:.2f} {curr}\n")
 
         if holdings and holdings.holdings:
