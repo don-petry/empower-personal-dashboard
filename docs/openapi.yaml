@@ -992,6 +992,16 @@ components:
             - integer
             - 'null'
           example: 1
+        category:
+          type:
+            - string
+            - 'null'
+          example: Groceries
+        categoryName:
+          type:
+            - string
+            - 'null'
+          example: Groceries
 
     TransactionsData:
       type: object
@@ -1380,6 +1390,18 @@ components:
             - integer
             - 'null'
           example: 1
+        category:
+          type:
+            - string
+            - 'null'
+          description: Normalized human-readable spending or income category name.
+          example: Groceries
+        category_name:
+          type:
+            - string
+            - 'null'
+          description: Normalized human-readable spending or income category name.
+          example: Groceries
 
     DashboardTransactions:
       type: object

@@ -158,6 +158,17 @@ def parse_args() -> argparse.Namespace:
         help="Path to YAML/JSON Beancount account/category mapping configuration.",
     )
     parser.add_argument(
+        "--overwrite-ledger",
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing Beancount ledger files instead of appending.",
+    )
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Explicitly append exported Beancount directives to an existing ledger file.",
+    )
+    parser.add_argument(
         "--email",
         "--username",
         type=str,
@@ -619,8 +630,16 @@ def main() -> int:
         if args.beancount:
             from empower_personal_dashboard.beancount import BeancountGenerator, BeancountMapper
 
+            # Ensure balances are available to enrich account identities and types
+            if not balances_res:
+                try:
+                    balances_res = client.fetch_balances()
+                except Exception as e:
+                    logger.debug("Could not fetch balances to enrich Beancount accounts: %s", e)
+
             mapper = BeancountMapper(mapping_path=args.beancount_map)
             generator = BeancountGenerator(mapper=mapper)
+            should_append = not args.overwrite_ledger
 
             if args.output_beancount:
                 out_target = Path(args.output_beancount)
@@ -630,15 +649,18 @@ def main() -> int:
                         balances=balances_res,
                         holdings=holdings_res,
                         transactions=transactions_res,
+                        append=should_append,
                     )
+                    action_msg = "appended to" if (out_target.exists() and should_append) else "saved to"
                     if not args.quiet:
-                        print(f"[+] Beancount ledger saved to: {out_target}")
+                        print(f"[+] Beancount ledger {action_msg}: {out_target}")
                 else:
                     created = generator.export_modular_ledger(
                         destination_dir=out_target,
                         balances=balances_res,
                         holdings=holdings_res,
                         transactions=transactions_res,
+                        append=should_append,
                     )
                     if not args.quiet:
                         print(f"[+] Beancount modular ledger ({len(created)} files) saved to: {out_target}")
@@ -649,6 +671,7 @@ def main() -> int:
                     balances=balances_res,
                     holdings=holdings_res,
                     transactions=transactions_res,
+                    append=should_append,
                 )
                 if not args.quiet:
                     print(f"[+] Beancount modular ledger ({len(created)} files) saved to: {dest_dir}")
@@ -687,14 +710,14 @@ def main() -> int:
             mapper = BeancountMapper(mapping_path=args.beancount_map)
             generator = BeancountGenerator(mapper=mapper)
             output_parts = []
+            output_parts.append(generator.generate_accounts_bean(balances_res, holdings_res, transactions_res))
             if balances_res:
-                output_parts.append(generator.generate_accounts_bean(balances_res))
                 output_parts.append(generator.generate_balances_bean(balances_res, holdings_res))
             if holdings_res:
+                output_parts.append(generator.generate_holdings_bean(holdings_res, balances=balances_res))
                 output_parts.append(generator.generate_prices_bean(holdings_res))
-                output_parts.append(generator.generate_holdings_bean(holdings_res))
             if transactions_res:
-                output_parts.append(generator.generate_transactions_bean(transactions_res))
+                output_parts.append(generator.generate_transactions_bean(transactions_res, balances=balances_res))
             print("\n".join(part.strip() for part in output_parts if part.strip()))
         else:
             if balances_res:

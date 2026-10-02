@@ -32,11 +32,11 @@ We decided to implement a **Pure-Python Native Beancount Export Engine** integra
 1. **Pure-Python Text Generation (Zero Heavy Dependencies):**
    - Directives (`open`, `close`, `pad`, `balance`, `price`, transactions) are generated using pure Python string formatting and strongly typed dataclasses.
    - The heavy C-extension `beancount` package is **not** a runtime dependency.
-   - Validation against `beancount.parser` is configured optionally under `dev` test dependencies.
+   - Directives conform strictly to the Beancount plain-text accounting grammar and work seamlessly with external Beancount CLI tools (e.g., `bean-check`, `fava`) without requiring Beancount as a Python dependency.
 
 2. **File Layout Strategy (Modular Default with Existing Ledger Support):**
    - **Existing Ledgers:** Users can export or append directly to an existing single file via `--output-beancount <path>`.
-   - **New Exports (Modular Default):** When targeting an export directory (e.g., `empower --all --beancount --output-dir ./ledger/`), the exporter generates a clean modular ledger linked by Beancount `include` directives:
+   - **New Exports (Modular Default):** When targeting an export directory (e.g., `empower --all --beancount --output-beancount ./ledger/`), the exporter generates a clean modular ledger linked by Beancount `include` directives:
      - `main.bean`: Operating currency (`USD`), ledger title, and includes.
      - `accounts.bean`: `open` and `pad` directives for accounts and equity.
      - `balances.bean`: Ground-truth `balance` assertions for cash and commodities.
@@ -49,7 +49,7 @@ We decided to implement a **Pure-Python Native Beancount Export Engine** integra
      - `Assets:Vanguard:TaxableBrokerage`
      - `Liabilities:Chase:SapphireReserve`
      - `Liabilities:RocketMortgage:PrimaryResidence`
-   - Account names are normalized via `clean_api_text()` and validated against Beancount's account regex (`^(Assets|Liabilities|Equity|Income|Expenses):[A-Z0-9][A-Za-z0-9\-]*`).
+   - Account names are normalized via `clean_api_text()` and validated against Beancount's account regex (`^(Assets|Liabilities|Equity|Income|Expenses):[A-Z0-9][A-Za-z0-9\-]*(:[A-Z0-9][A-Za-z0-9\-]*)*$`).
 
 4. **YAML Account & Category Mapping:**
    - Supports user-defined YAML mapping files (`~/.empower_beancount_map.yaml` or `--beancount-map <path>`):
@@ -131,6 +131,6 @@ flowchart TD
 ## 5. Verification & Testing Strategy
 
 - **Hermetic TDD:** Unit tests in `tests/test_beancount.py` verifying directive formatting, direct firm account slugification, YAML rule mapping, lot tracking, and modular file layout.
-- **100% Synthetic Data:** All test fixtures adhere to the Zero-PII strict mandate from [`AGENTS.md`](../AGENTS.md).
+- **100% Synthetic Data:** All test fixtures adhere to the Zero-PII strict mandate from [`AGENTS.md`](../../AGENTS.md).
 - **Fast Execution:** All Beancount tests execute in under 1 second without network I/O.
 - **Syntax Compliance:** Verify generated output against standard Beancount BNF grammar rules.

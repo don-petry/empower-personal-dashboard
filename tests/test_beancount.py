@@ -326,14 +326,14 @@ class TestBeancountGenerator(unittest.TestCase):
         self.assertIn("2026-10-01 balance Assets:AllyBank:EverydayChecking 5000.00 USD", output)
         # Credit liability balance is asserted as negative in Beancount
         self.assertIn("2026-10-01 balance Liabilities:Chase:SapphireReserve -2000.00 USD", output)
-        # Commodity balance assertions
-        self.assertIn("2026-10-01 balance Assets:Vanguard:Brokerage 40.00 VTI", output)
-        self.assertIn("2026-10-01 balance Assets:Vanguard:Brokerage 10.00 BND", output)
+        # Commodity balance assertions with high-precision format
+        self.assertIn("2026-10-01 balance Assets:Vanguard:Brokerage 40.000000 VTI", output)
+        self.assertIn("2026-10-01 balance Assets:Vanguard:Brokerage 10.000000 BND", output)
 
     def test_generate_prices_bean(self):
         output = self.generator.generate_prices_bean(self.synthetic_holdings)
-        self.assertIn("2026-10-01 price VTI 280.00 USD", output)
-        self.assertIn("2026-10-01 price BND 80.00 USD", output)
+        self.assertIn("2026-10-01 price VTI 280.0000 USD", output)
+        self.assertIn("2026-10-01 price BND 80.0000 USD", output)
 
     def test_generate_transactions_double_entry_balance(self):
         output = self.generator.generate_transactions_bean(self.synthetic_transactions)
@@ -368,21 +368,23 @@ class TestBeancountGenerator(unittest.TestCase):
             self.assertTrue((out_path / "main.bean").exists())
             self.assertTrue((out_path / "accounts.bean").exists())
             self.assertTrue((out_path / "balances.bean").exists())
+            self.assertTrue((out_path / "holdings.bean").exists())
             self.assertTrue((out_path / "prices.bean").exists())
             self.assertTrue((out_path / "transactions.bean").exists())
 
             main_content = (out_path / "main.bean").read_text(encoding="utf-8")
             self.assertIn('include "accounts.bean"', main_content)
             self.assertIn('include "balances.bean"', main_content)
+            self.assertIn('include "holdings.bean"', main_content)
             self.assertIn('include "prices.bean"', main_content)
             self.assertIn('include "transactions.bean"', main_content)
 
     def test_generate_holdings_lots_with_cost_basis(self):
         output = self.generator.generate_holdings_bean(self.synthetic_holdings)
-        # VTI has cost basis 8800.0 / 40.0 = 220.00 USD
-        self.assertIn("40.00 VTI {220.00 USD} @ 280.00 USD", output)
+        # VTI has cost basis 8800.0 / 40.0 = 220.000000 USD
+        self.assertIn("40.000000 VTI {220.000000 USD} @ 280.0000 USD", output)
         # BND has no cost basis -> formatted with @ price
-        self.assertIn("10.00 BND @ 80.00 USD", output)
+        self.assertIn("10.000000 BND @ 80.0000 USD", output)
 
     def test_generate_single_file_export(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -397,9 +399,261 @@ class TestBeancountGenerator(unittest.TestCase):
             content = single_file.read_text(encoding="utf-8")
             self.assertIn("open Assets:AllyBank:EverydayChecking USD", content)
             self.assertIn("2026-10-01 balance Assets:AllyBank:EverydayChecking 5000.00 USD", content)
-            self.assertIn("2026-10-01 price VTI 280.00 USD", content)
+            self.assertIn("40.000000 VTI {220.000000 USD} @ 280.0000 USD", content)
+            self.assertIn("2026-10-01 price VTI 280.0000 USD", content)
             self.assertIn('2026-09-15 * "WHOLE FOODS MARKET"', content)
+
+    def test_credit_card_types_slugify_as_liabilities(self):
+        self.assertEqual(slugify_account_name("Chase", "Sapphire", "credit_card"), "Liabilities:Chase:Sapphire")
+        self.assertEqual(slugify_account_name("Citi", "DoubleCash", "creditcard"), "Liabilities:Citi:DoubleCash")
+
+    def test_string_escaping_quotes_and_newlines(self):
+        tx_data = DashboardTransactions(
+            start_date="2026-09-01",
+            end_date="2026-09-30",
+            total_transactions=1,
+            money_in=0.0,
+            money_out=50.0,
+            net_cashflow=-50.0,
+            transactions=[
+                {
+                    "user_transaction_id": "tx-quote-1",
+                    "account_id": "ACC-CHK-001",
+                    "account_name": "Checking",
+                    "transaction_date": "2026-09-10",
+                    "description": 'Bob\'s "Super" Store\nDiscount',
+                    "original_description": "BOBS STORE \t DISCOUNT",
+                    "amount": 50.0,
+                    "is_credit": False,
+                    "is_cash_in": False,
+                    "is_cash_out": True,
+                    "is_income": False,
+                    "is_spending": True,
+                    "category": 'Shopping "Retail"',
+                }
+            ],
+        )
+        output = self.generator.generate_transactions_bean(tx_data)
+        self.assertIn('Bob\'s \\"Super\\" Store Discount', output)
+        self.assertIn('Shopping \\"Retail\\"', output)
+        self.assertNotIn("\nDiscount", output)
+
+    def test_malformed_and_scalar_yaml_handling(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+            f.write("just a raw string, not a dict")
+            scalar_path = f.name
+
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+            f.write("- item1\n- item2\n")
+            list_path = f.name
+
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+            f.write("accounts: [1, 2, 3]\ncategories: 'scalar'\nregex_rules: ['invalid']\n")
+            weird_path = f.name
+
+        # None of these should raise exceptions
+        mapper1 = BeancountMapper(mapping_path=scalar_path)
+        self.assertEqual(mapper1.accounts, {})
+        self.assertEqual(mapper1.categories, {})
+
+        mapper2 = BeancountMapper(mapping_path=list_path)
+        self.assertEqual(mapper2.accounts, {})
+
+        mapper3 = BeancountMapper(mapping_path=weird_path)
+        self.assertEqual(mapper3.accounts, {})
+        self.assertEqual(mapper3.categories, {})
+        self.assertEqual(mapper3.regex_rules, [])
+
+    def test_holdings_resolved_from_balances(self):
+        # Holdings without firm_name should resolve from balances lookup
+        holdings_data = DashboardHoldings(
+            as_of_date="2026-10-01",
+            total_value=5000.0,
+            holdings=[
+                {
+                    "user_account_id": 1001,
+                    "account_name": "Everyday Checking",
+                    "ticker": "AAPL",
+                    "quantity": 10.0,
+                    "price": 200.0,
+                    "cost_basis": 1500.0,
+                }
+            ],
+        )
+        output = self.generator.generate_holdings_bean(holdings_data, balances=self.synthetic_balances)
+        self.assertIn("Assets:AllyBank:EverydayChecking", output)
+        self.assertNotIn("Vanguard", output)
+
+    def test_transactions_resolved_from_balances_with_liabilities(self):
+        tx_data = DashboardTransactions(
+            start_date="2026-09-01",
+            end_date="2026-09-30",
+            total_transactions=1,
+            money_in=0.0,
+            money_out=75.0,
+            net_cashflow=-75.0,
+            transactions=[
+                {
+                    "user_transaction_id": "tx-credit-99",
+                    "account_id": "ACC-CRD-002",
+                    "account_name": "Sapphire Reserve",
+                    "transaction_date": "2026-09-12",
+                    "description": "Restaurant Dining",
+                    "amount": 75.0,
+                    "is_credit": False,
+                    "is_cash_in": False,
+                    "is_cash_out": True,
+                    "is_income": False,
+                    "is_spending": True,
+                }
+            ],
+        )
+        output = self.generator.generate_transactions_bean(tx_data, balances=self.synthetic_balances)
+        # Should resolve to Liabilities:Chase:SapphireReserve and charge should be negative
+        self.assertIn("Liabilities:Chase:SapphireReserve      -75.00 USD", output)
+        self.assertIn("Expenses:Uncategorized                  75.00 USD", output)
+
+    def test_fractional_share_precision(self):
+        holdings_data = DashboardHoldings(
+            as_of_date="2026-10-01",
+            total_value=123.45,
+            holdings=[
+                {
+                    "ticker": "BTC",
+                    "quantity": 0.0042,
+                    "price": 60000.0,
+                    "cost_basis": 210.0,
+                    "account_name": "Crypto",
+                }
+            ],
+        )
+        output = self.generator.generate_holdings_bean(holdings_data)
+        self.assertIn("0.004200 BTC", output)
+        # Cost basis 210.0 / 0.0042 = 50000.000000
+        self.assertIn("{50000.000000 USD}", output)
+
+    def test_transfer_routing_to_equity_transfers(self):
+        tx_data = DashboardTransactions(
+            start_date="2026-09-01",
+            end_date="2026-09-30",
+            total_transactions=2,
+            money_in=500.0,
+            money_out=500.0,
+            net_cashflow=0.0,
+            transactions=[
+                {
+                    "user_transaction_id": "tx-xfer-1",
+                    "account_id": "ACC-CHK-001",
+                    "account_name": "Everyday Checking",
+                    "transaction_date": "2026-09-05",
+                    "description": "Transfer to Savings",
+                    "amount": 500.0,
+                    "is_credit": False,
+                    "is_cash_in": False,
+                    "is_cash_out": True,
+                    "is_income": False,
+                    "is_spending": False,
+                },
+                {
+                    "user_transaction_id": "tx-xfer-2",
+                    "account_id": "ACC-CHK-001",
+                    "account_name": "Everyday Checking",
+                    "transaction_date": "2026-09-06",
+                    "description": "Incoming Account Transfer",
+                    "amount": 500.0,
+                    "is_credit": True,
+                    "is_cash_in": True,
+                    "is_cash_out": False,
+                    "is_income": False,
+                    "is_spending": False,
+                },
+            ],
+        )
+        output = self.generator.generate_transactions_bean(tx_data, balances=self.synthetic_balances)
+        self.assertIn("Equity:Transfers", output)
+        self.assertNotIn("Expenses:Uncategorized", output)
+
+    def test_single_file_export_append_preserves_content(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            single_file = Path(tmp_dir) / "ledger.bean"
+            # Write initial version
+            self.generator.export_single_file(
+                filepath=single_file,
+                balances=self.synthetic_balances,
+                transactions=self.synthetic_transactions,
+            )
+            initial_content = single_file.read_text(encoding="utf-8")
+            self.assertIn('option "title"', initial_content)
+            self.assertIn("tx-101", initial_content)
+
+            # Export with append=True and an additional transaction
+            new_tx = DashboardTransactions(
+                start_date="2026-10-01",
+                end_date="2026-10-02",
+                total_transactions=1,
+                money_in=0.0,
+                money_out=15.0,
+                net_cashflow=-15.0,
+                transactions=[
+                    {
+                        "user_transaction_id": "tx-new-999",
+                        "account_id": "ACC-CHK-001",
+                        "account_name": "Everyday Checking",
+                        "transaction_date": "2026-10-02",
+                        "description": "New Bakery",
+                        "amount": 15.0,
+                        "is_credit": False,
+                        "is_cash_in": False,
+                        "is_cash_out": True,
+                        "is_income": False,
+                        "is_spending": True,
+                    }
+                ],
+            )
+            self.generator.export_single_file(
+                filepath=single_file,
+                balances=self.synthetic_balances,
+                transactions=new_tx,
+                append=True,
+            )
+            appended_content = single_file.read_text(encoding="utf-8")
+            # Original title should appear once
+            self.assertEqual(appended_content.count('option "title"'), 1)
+            # Both old and new transaction should exist
+            self.assertIn("tx-101", appended_content)
+            self.assertIn("tx-new-999", appended_content)
+
+    def test_selective_export_opens_all_referenced_accounts(self):
+        # Even with no balances supplied, open directives are created for transaction accounts
+        tx_data = DashboardTransactions(
+            start_date="2026-09-01",
+            end_date="2026-09-30",
+            total_transactions=1,
+            money_in=0.0,
+            money_out=10.0,
+            net_cashflow=-10.0,
+            transactions=[
+                {
+                    "user_transaction_id": "tx-selective-1",
+                    "account_id": "ACC-STANDALONE-001",
+                    "firm_name": "Standalone Bank",
+                    "account_name": "Free Checking",
+                    "account_type": "bank",
+                    "transaction_date": "2026-09-01",
+                    "description": "Snack",
+                    "amount": 10.0,
+                    "is_credit": False,
+                    "is_cash_in": False,
+                    "is_cash_out": True,
+                    "is_income": False,
+                    "is_spending": True,
+                }
+            ],
+        )
+        accounts_bean = self.generator.generate_accounts_bean(balances=None, transactions=tx_data)
+        self.assertIn("open Assets:StandaloneBank:FreeChecking USD", accounts_bean)
 
 
 if __name__ == "__main__":
     unittest.main()
+

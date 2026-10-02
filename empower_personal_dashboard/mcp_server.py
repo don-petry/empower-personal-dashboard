@@ -908,12 +908,56 @@ def create_mcp_server(
             if export_beancount:
                 from empower_personal_dashboard.beancount import BeancountGenerator, BeancountMapper
 
+                if beancount_map_path:
+                    raw_map = Path(beancount_map_path).expanduser()
+                    if raw_map.is_symlink():
+                        return {
+                            "status": "error",
+                            "error_code": "ACCESS_DENIED",
+                            "message": f"beancount_map_path '{beancount_map_path}' cannot be a symlink.",
+                        }
+                    resolved_map = raw_map.resolve()
+                    if resolved_map.suffix.lower() not in (".yaml", ".yml", ".json"):
+                        return {
+                            "status": "error",
+                            "error_code": "INVALID_ARGUMENT",
+                            "message": f"beancount_map_path '{beancount_map_path}' must have a .yaml, .yml, or .json extension.",
+                        }
+                    allowed_roots = [
+                        export_root,
+                        Path.cwd().resolve(),
+                        Path.home().resolve(),
+                    ]
+                    is_allowed = any(resolved_map.is_relative_to(root) for root in allowed_roots)
+                    if not is_allowed:
+                        return {
+                            "status": "error",
+                            "error_code": "ACCESS_DENIED",
+                            "message": (
+                                f"beancount_map_path '{beancount_map_path}' resolves to '{resolved_map}' "
+                                f"which is outside approved configuration directories."
+                            ),
+                        }
+
+                if balances is None:
+                    try:
+                        balances = _fetch_balances_cached()
+                    except Exception:
+                        pass
+
                 b_mapper = BeancountMapper(mapping_path=beancount_map_path)
                 b_gen = BeancountGenerator(mapper=b_mapper)
                 ledger_dir = dest_path / "ledger"
                 sym_err = _check_symlink(ledger_dir)
                 if sym_err:
                     return sym_err
+
+                for bean_file_name in ("main.bean", "accounts.bean", "balances.bean", "holdings.bean", "prices.bean", "transactions.bean"):
+                    bean_target = ledger_dir / bean_file_name
+                    bean_err = _check_symlink(bean_target)
+                    if bean_err:
+                        return bean_err
+
                 b_files = b_gen.export_modular_ledger(
                     destination_dir=ledger_dir,
                     balances=balances,
@@ -957,7 +1001,7 @@ def create_mcp_server(
             "data_scopes": ["all", "balances", "holdings", "transactions"],
             "cli_examples": {
                 "bulk_export_csv": "empower --all --csv",
-                "beancount_modular_export": "empower --all --beancount --output-dir ./ledger",
+                "beancount_modular_export": "empower --all --beancount --output-beancount ./ledger",
                 "beancount_single_ledger": "empower --all --beancount --output-beancount data/empower.bean",
                 "balances_markdown": "empower --balances --format markdown",
                 "holdings_table": "empower --holdings --format table --limit 50",
@@ -1006,7 +1050,7 @@ def create_mcp_server(
         from empower_personal_dashboard.beancount import BeancountGenerator
 
         gen = BeancountGenerator()
-        return gen.generate_accounts_bean(balances) + "\n" + gen.generate_balances_bean(balances, holdings)
+        return gen.generate_accounts_bean(balances, holdings) + "\n" + gen.generate_balances_bean(balances, holdings)
 
     @server.resource("empower://beancount/transactions")
     def get_beancount_transactions_resource() -> str:
@@ -1015,10 +1059,15 @@ def create_mcp_server(
         start_of_year = f"{now.year}-01-01"
         today = now.strftime("%Y-%m-%d")
         tx_data = _fetch_transactions_cached(start_date=start_of_year, end_date=today, limit=100)
+        balances = None
+        try:
+            balances = _fetch_balances_cached()
+        except Exception:
+            pass
         from empower_personal_dashboard.beancount import BeancountGenerator
 
         gen = BeancountGenerator()
-        return gen.generate_transactions_bean(tx_data)
+        return gen.generate_transactions_bean(tx_data, balances=balances)
 
     @server.resource("empower://export/options")
     def get_export_options_resource() -> str:
@@ -1027,7 +1076,7 @@ def create_mcp_server(
             "# Empower Personal Dashboard Export Options\n\n"
             "## CLI Export Commands\n"
             "- Bulk export JSON + CSV: `empower --all --csv`\n"
-            "- Beancount modular ledger: `empower --all --beancount --output-dir ./ledger`\n"
+            "- Beancount modular ledger: `empower --all --beancount --output-beancount ./ledger`\n"
             "- Balances to Markdown: `empower --balances --format markdown`\n"
             "- Holdings to Table: `empower --holdings --format table --limit 50`\n"
             "- Date-filtered transactions: `empower --transactions --start-date YYYY-01-01 --csv`\n\n"

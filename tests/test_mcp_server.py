@@ -491,8 +491,31 @@ class TestMCPServer(unittest.TestCase):
                     payload_bean = json.loads(res_bean.content[0].text)
                     self.assertEqual(payload_bean["status"], "success")
                     dest = Path(tmpdir)
-                    self.assertTrue((dest / "ledger" / "main.bean").exists())
-                    self.assertTrue((dest / "ledger" / "accounts.bean").exists())
+                    main_bean = dest / "ledger" / "main.bean"
+                    accounts_bean = dest / "ledger" / "accounts.bean"
+                    balances_bean = dest / "ledger" / "balances.bean"
+                    holdings_bean = dest / "ledger" / "holdings.bean"
+                    prices_bean = dest / "ledger" / "prices.bean"
+                    transactions_bean = dest / "ledger" / "transactions.bean"
+
+                    self.assertTrue(main_bean.exists())
+                    self.assertIn('option "operating_currency" "USD"', main_bean.read_text(encoding="utf-8"))
+                    self.assertIn('include "holdings.bean"', main_bean.read_text(encoding="utf-8"))
+
+                    self.assertTrue(accounts_bean.exists())
+                    self.assertIn("open Equity:Opening-Balances", accounts_bean.read_text(encoding="utf-8"))
+
+                    self.assertTrue(balances_bean.exists())
+                    self.assertIn("balance Assets:", balances_bean.read_text(encoding="utf-8"))
+
+                    self.assertTrue(holdings_bean.exists())
+                    self.assertIn("Portfolio Snapshot", holdings_bean.read_text(encoding="utf-8"))
+
+                    self.assertTrue(prices_bean.exists())
+                    self.assertIn("price", prices_bean.read_text(encoding="utf-8"))
+
+                    self.assertTrue(transactions_bean.exists())
+                    self.assertIn("empower_id:", transactions_bean.read_text(encoding="utf-8"))
 
             # Verify get_export_options tool contains beancount
             res_options = await self.server.call_tool("get_export_options", {})

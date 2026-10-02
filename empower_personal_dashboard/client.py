@@ -614,6 +614,8 @@ class EmpowerDashboardClient:
                 "quantity": qty_val,
                 "status": clean_api_text(tx.get("status", "posted")),
                 "category_id": tx.get("categoryId"),
+                "category": clean_api_text(tx.get("categoryName") or tx.get("category") or ""),
+                "category_name": clean_api_text(tx.get("categoryName") or tx.get("category") or ""),
             })
 
         return DashboardTransactions(
@@ -812,6 +814,8 @@ class EmpowerDashboardClient:
                 "quantity": None,
                 "status": "posted",
                 "category_id": 1,
+                "category": "Paycheck",
+                "category_name": "Paycheck",
             },
             {
                 "user_transaction_id": "TXN-002",
@@ -834,6 +838,8 @@ class EmpowerDashboardClient:
                 "quantity": None,
                 "status": "posted",
                 "category_id": 80,
+                "category": "Retirement Contribution",
+                "category_name": "Retirement Contribution",
             },
             {
                 "user_transaction_id": "TXN-003",
@@ -856,6 +862,8 @@ class EmpowerDashboardClient:
                 "quantity": 125.50,
                 "status": "posted",
                 "category_id": 69,
+                "category": "Dividends",
+                "category_name": "Dividends",
             },
             {
                 "user_transaction_id": "TXN-004",
@@ -878,6 +886,8 @@ class EmpowerDashboardClient:
                 "quantity": None,
                 "status": "posted",
                 "category_id": 12,
+                "category": "Groceries",
+                "category_name": "Groceries",
             },
         ]
         if limit and limit > 0:
