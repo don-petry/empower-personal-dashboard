@@ -765,11 +765,13 @@ def create_mcp_server(
         destination_dir: str = "./data",
         scope: str = "all",
         export_csv: bool = True,
+        export_beancount: bool = False,
+        beancount_map_path: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Export Empower Personal Dashboard data to disk in JSON, JSONL, and CSV formats.
+        """Export Empower Personal Dashboard data to disk in JSON, JSONL, CSV, and Beancount formats.
 
         Directly mirrors the CLI bulk export functionality (`empower --all --csv --output ...`).
 
@@ -777,6 +779,8 @@ def create_mcp_server(
             destination_dir: Directory where export files will be written (default: './data').
             scope: Data domain to export ('all', 'balances', 'holdings', 'transactions'). Default: 'all'.
             export_csv: Whether to write companion .csv files alongside JSON (default: True).
+            export_beancount: Whether to generate Beancount plain-text ledger files (.bean) (default: False).
+            beancount_map_path: Optional path to YAML/JSON Beancount account/category mapping configuration.
             start_date: Optional earliest date for transactions export (YYYY-MM-DD). Defaults to Jan 1 of current year.
             end_date: Optional latest date for transactions export (YYYY-MM-DD). Defaults to today.
             limit: Optional maximum record limit for transactions.
@@ -839,6 +843,11 @@ def create_mcp_server(
             do_holdings = scope_clean in ("all", "holdings")
             do_transactions = scope_clean in ("all", "transactions")
 
+            balances: Optional[DashboardBalances] = None
+            holdings: Optional[DashboardHoldings] = None
+            tx_data: Optional[DashboardTransactions] = None
+            beancount_warnings: List[str] = []
+
             if do_balances:
                 balances = _fetch_balances_cached()
                 b_json_path = dest_path / "empower_balances.json"
@@ -897,7 +906,71 @@ def create_mcp_server(
                     export_transactions_csv(tx_data, t_csv_path)
                     files_created.append({"file": str(t_csv_path), "format": "csv", "records": len(tx_data.transactions)})
 
-            return {
+            beancount_warnings: List[str] = []
+            if export_beancount:
+                from empower_personal_dashboard.beancount import BeancountGenerator, BeancountMapper
+
+                if beancount_map_path:
+                    raw_map = Path(beancount_map_path).expanduser()
+                    if raw_map.is_symlink():
+                        return {
+                            "status": "error",
+                            "error_code": "ACCESS_DENIED",
+                            "message": f"beancount_map_path '{beancount_map_path}' cannot be a symlink.",
+                        }
+                    resolved_map = raw_map.resolve()
+                    if resolved_map.suffix.lower() not in (".yaml", ".yml", ".json"):
+                        return {
+                            "status": "error",
+                            "error_code": "INVALID_ARGUMENT",
+                            "message": f"beancount_map_path '{beancount_map_path}' must have a .yaml, .yml, or .json extension.",
+                        }
+                    allowed_roots = [
+                        export_root,
+                        Path.cwd().resolve(),
+                        Path.home().resolve(),
+                    ]
+                    is_allowed = any(resolved_map.is_relative_to(root) for root in allowed_roots)
+                    if not is_allowed:
+                        return {
+                            "status": "error",
+                            "error_code": "ACCESS_DENIED",
+                            "message": (
+                                f"beancount_map_path '{beancount_map_path}' resolves to '{resolved_map}' "
+                                f"which is outside approved configuration directories."
+                            ),
+                        }
+
+                if balances is None:
+                    try:
+                        balances = _fetch_balances_cached()
+                    except Exception as e:
+                        logger.warning("Beancount export: balances unavailable: %s", e)
+                        beancount_warnings.append(f"Balances unavailable; ledger omits balance data: {e}")
+
+                b_mapper = BeancountMapper(mapping_path=beancount_map_path)
+                b_gen = BeancountGenerator(mapper=b_mapper)
+                ledger_dir = dest_path / "ledger"
+                sym_err = _check_symlink(ledger_dir)
+                if sym_err:
+                    return sym_err
+
+                for bean_file_name in ("main.bean", "accounts.bean", "balances.bean", "holdings.bean", "prices.bean", "transactions.bean"):
+                    bean_target = ledger_dir / bean_file_name
+                    bean_err = _check_symlink(bean_target)
+                    if bean_err:
+                        return bean_err
+
+                b_files = b_gen.export_modular_ledger(
+                    destination_dir=ledger_dir,
+                    balances=balances,
+                    holdings=holdings,
+                    transactions=tx_data,
+                )
+                for bf in b_files:
+                    files_created.append({"file": str(bf), "format": "beancount", "records": None})
+
+            resp: Dict[str, Any] = {
                 "status": "success",
                 "destination_dir": str(dest_path),
                 "scope": scope,
@@ -905,6 +978,9 @@ def create_mcp_server(
                 "files": files_created,
                 "summary": f"Successfully exported {len(files_created)} file(s) to {dest_path}.",
             }
+            if beancount_warnings:
+                resp["warnings"] = beancount_warnings
+            return resp
         except (SessionExpiredError, RequireTwoFactorException, FileNotFoundError):
             return {
                 "status": "error",
@@ -923,20 +999,22 @@ def create_mcp_server(
         """Discover available export formats, CLI commands, and destination configurations.
 
         Returns:
-            Dict outlining supported formats (JSON, JSONL, CSV, Markdown, Table), scopes, CLI flags, and usage examples.
+            Dict outlining supported formats (JSON, JSONL, CSV, Markdown, Table, Beancount), scopes, CLI flags, and usage examples.
         """
         return {
             "status": "success",
-            "supported_formats": ["json", "jsonl", "csv", "markdown", "table"],
+            "supported_formats": ["json", "jsonl", "csv", "markdown", "table", "beancount"],
             "data_scopes": ["all", "balances", "holdings", "transactions"],
             "cli_examples": {
                 "bulk_export_csv": "empower --all --csv",
+                "beancount_modular_export": "empower --all --beancount --output-beancount ./ledger",
+                "beancount_single_ledger": "empower --all --beancount --output-beancount data/empower.bean",
                 "balances_markdown": "empower --balances --format markdown",
                 "holdings_table": "empower --holdings --format table --limit 50",
                 "filtered_transactions_csv": "empower --transactions --start-date 2026-01-01 --csv --output-transactions data/tx.json",
                 "silent_cron_export": "empower --all --csv --quiet",
             },
-            "mcp_export_tool": "Call export_data(destination_dir='./data', scope='all', export_csv=True) to trigger programmatic exports directly.",
+            "mcp_export_tool": "Call export_data(destination_dir='./data', scope='all', export_csv=True, export_beancount=True) to trigger programmatic exports directly.",
         }
 
     # -------------------------------------------------------------------------
@@ -961,6 +1039,75 @@ def create_mcp_server(
         res = get_balances(include_inactive=False)
         return json.dumps(res, indent=2)
 
+    @server.resource("empower://beancount/prices")
+    def get_beancount_prices_resource() -> str:
+        """Resource exposing investment commodity prices as Beancount price directives."""
+        try:
+            holdings = _fetch_holdings_cached()
+            from empower_personal_dashboard.beancount import BeancountGenerator
+
+            gen = BeancountGenerator()
+            return gen.generate_prices_bean(holdings)
+        except (SessionExpiredError, RequireTwoFactorException, FileNotFoundError):
+            return (
+                ";; ERROR [AUTH_REQUIRED]: Empower session has expired or is not initialized.\n"
+                ";; Please run 'empower --login' in your local terminal to re-authenticate with 2FA.\n"
+            )
+        except EmpowerError as e:
+            return f";; ERROR [API_ERROR]: Empower API error: {e}\n"
+        except Exception as e:
+            logger.exception("Unexpected error in get_beancount_prices_resource")
+            return f";; ERROR [INTERNAL_ERROR]: {e}\n"
+
+    @server.resource("empower://beancount/balances")
+    def get_beancount_balances_resource() -> str:
+        """Resource exposing accounts and commodity balances as Beancount directives."""
+        try:
+            balances = _fetch_balances_cached()
+            holdings = _fetch_holdings_cached()
+            from empower_personal_dashboard.beancount import BeancountGenerator
+
+            gen = BeancountGenerator()
+            return gen.generate_accounts_bean(balances, holdings) + "\n" + gen.generate_balances_bean(balances, holdings)
+        except (SessionExpiredError, RequireTwoFactorException, FileNotFoundError):
+            return (
+                ";; ERROR [AUTH_REQUIRED]: Empower session has expired or is not initialized.\n"
+                ";; Please run 'empower --login' in your local terminal to re-authenticate with 2FA.\n"
+            )
+        except EmpowerError as e:
+            return f";; ERROR [API_ERROR]: Empower API error: {e}\n"
+        except Exception as e:
+            logger.exception("Unexpected error in get_beancount_balances_resource")
+            return f";; ERROR [INTERNAL_ERROR]: {e}\n"
+
+    @server.resource("empower://beancount/transactions")
+    def get_beancount_transactions_resource() -> str:
+        """Resource exposing recent transactions as balanced Beancount double-entry directives."""
+        try:
+            now = datetime.now(timezone.utc)
+            start_of_year = f"{now.year}-01-01"
+            today = now.strftime("%Y-%m-%d")
+            tx_data = _fetch_transactions_cached(start_date=start_of_year, end_date=today, limit=100)
+            balances = None
+            try:
+                balances = _fetch_balances_cached()
+            except Exception as e:
+                logger.warning("Could not fetch balances to enrich Beancount transactions resource: %s", e)
+            from empower_personal_dashboard.beancount import BeancountGenerator
+
+            gen = BeancountGenerator()
+            return gen.generate_transactions_bean(tx_data, balances=balances)
+        except (SessionExpiredError, RequireTwoFactorException, FileNotFoundError):
+            return (
+                ";; ERROR [AUTH_REQUIRED]: Empower session has expired or is not initialized.\n"
+                ";; Please run 'empower --login' in your local terminal to re-authenticate with 2FA.\n"
+            )
+        except EmpowerError as e:
+            return f";; ERROR [API_ERROR]: Empower API error: {e}\n"
+        except Exception as e:
+            logger.exception("Unexpected error in get_beancount_transactions_resource")
+            return f";; ERROR [INTERNAL_ERROR]: {e}\n"
+
     @server.resource("empower://export/options")
     def get_export_options_resource() -> str:
         """Resource exposing export options, formats, and CLI flags as markdown."""
@@ -968,6 +1115,7 @@ def create_mcp_server(
             "# Empower Personal Dashboard Export Options\n\n"
             "## CLI Export Commands\n"
             "- Bulk export JSON + CSV: `empower --all --csv`\n"
+            "- Beancount modular ledger: `empower --all --beancount --output-beancount ./ledger`\n"
             "- Balances to Markdown: `empower --balances --format markdown`\n"
             "- Holdings to Table: `empower --holdings --format table --limit 50`\n"
             "- Date-filtered transactions: `empower --transactions --start-date YYYY-01-01 --csv`\n\n"
@@ -977,6 +1125,7 @@ def create_mcp_server(
             "3. **CSV**: Flat tabular companion files for Excel and spreadsheets.\n"
             "4. **Markdown**: Formatted tables for direct note embedding.\n"
             "5. **Table**: ASCII console tables for terminal audits.\n"
+            "6. **Beancount**: Double-entry plain-text accounting directives (.bean) with Direct Firm Naming and lot tracking.\n"
         )
 
     # -------------------------------------------------------------------------

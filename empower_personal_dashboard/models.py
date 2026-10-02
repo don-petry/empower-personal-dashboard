@@ -138,6 +138,8 @@ class Transaction:
     quantity: Optional[float] = None
     status: str = "posted"
     category_id: Optional[int] = None
+    category: Optional[str] = None
+    category_name: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -161,6 +163,8 @@ class Transaction:
             "quantity": self.quantity,
             "status": self.status,
             "category_id": self.category_id,
+            "category": self.category,
+            "category_name": self.category_name,
         }
 
 

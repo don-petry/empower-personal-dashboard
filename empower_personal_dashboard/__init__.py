@@ -24,6 +24,11 @@ from .models import (
     InvestmentHolding,
     Transaction,
 )
+from .beancount import (
+    BeancountGenerator,
+    BeancountMapper,
+    slugify_account_name,
+)
 from .sanitizers import clean_api_text
 
 __version__ = "0.1.0"
@@ -51,5 +56,8 @@ __all__ = [
     "MIGRATED_BASE_URL",
     "DEFAULT_SESSION_FILE",
     "create_mcp_server",
+    "BeancountGenerator",
+    "BeancountMapper",
+    "slugify_account_name",
 ]
 

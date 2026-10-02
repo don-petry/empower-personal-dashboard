@@ -25,6 +25,7 @@ import argparse
 import csv
 import getpass
 import json
+import logging
 import os
 import sys
 from datetime import datetime, timezone
@@ -44,6 +45,8 @@ from .exceptions import (
     SessionExpiredError,
 )
 from .models import DashboardBalances, DashboardHoldings, DashboardTransactions
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_OUTPUT_DIR = Path.cwd() / "data"
 DEFAULT_BALANCES_FILE = DEFAULT_OUTPUT_DIR / "empower_balances.json"
@@ -141,6 +144,34 @@ def parse_args() -> argparse.Namespace:
         help="Export companion CSV files alongside JSON output.",
     )
     parser.add_argument(
+        "--beancount",
+        action="store_true",
+        help="Export data to Beancount plain-text accounting format (.bean / .beancount).",
+    )
+    parser.add_argument(
+        "--output-beancount",
+        type=Path,
+        default=None,
+        help="File path or directory for Beancount ledger export.",
+    )
+    parser.add_argument(
+        "--beancount-map",
+        type=Path,
+        default=None,
+        help="Path to YAML/JSON Beancount account/category mapping configuration.",
+    )
+    parser.add_argument(
+        "--overwrite-ledger",
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing Beancount ledger files instead of appending.",
+    )
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Explicitly append exported Beancount directives to an existing ledger file.",
+    )
+    parser.add_argument(
         "--email",
         "--username",
         type=str,
@@ -167,9 +198,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--format",
-        choices=["table", "markdown", "json"],
+        choices=["table", "markdown", "json", "beancount"],
         default="table",
-        help="Console output format (table, markdown, json).",
+        help="Console output format (table, markdown, json, beancount).",
     )
     parser.add_argument(
         "--debug",
@@ -512,17 +543,25 @@ def main() -> int:
             cli_code=args.code,
         )
 
+    # Validate mutually exclusive ledger flags
+    if getattr(args, "append", False) and getattr(args, "overwrite_ledger", False):
+        print("[!] Error: Cannot specify both --append and --overwrite-ledger (--overwrite).", file=sys.stderr)
+        return 1
+
+    # Keep progress and informational messages out of stdout when emitting Beancount directives
+    progress_file = sys.stderr if getattr(args, "format", None) == "beancount" else None
+
     # Determine execution mode
     has_session = args.session_file.exists()
     if not has_session and not args.sandbox:
         if not args.quiet:
-            print(f"[*] No session file found at {args.session_file}.")
-            print("[*] Defaulting to sandbox/mock mode. Run with '--login' to connect live.")
+            print(f"[*] No session file found at {args.session_file}.", file=progress_file)
+            print("[*] Defaulting to sandbox/mock mode. Run with '--login' to connect live.", file=progress_file)
         client.mock_mode = True
 
     if not args.quiet:
         mode_label = "SANDBOX / MOCK MODE" if client.mock_mode else "LIVE"
-        print(f"[*] Querying Empower Personal Dashboard [{mode_label}]...")
+        print(f"[*] Querying Empower Personal Dashboard [{mode_label}]...", file=progress_file)
 
     do_balances = args.balances or args.all or (not args.holdings and not args.transactions)
     do_holdings = args.holdings or args.all
@@ -543,13 +582,13 @@ def main() -> int:
                 with open(args.output, "w", encoding="utf-8") as f:
                     json.dump(b_data, f, indent=2, ensure_ascii=False)
                 if not args.quiet:
-                    print(f"[+] Balances snapshot saved to: {args.output}")
+                    print(f"[+] Balances snapshot saved to: {args.output}", file=progress_file)
 
             if args.csv and args.output:
                 csv_path = args.output.with_suffix(".csv")
                 export_balances_csv(balances_res, csv_path)
                 if not args.quiet:
-                    print(f"[+] Balances CSV saved to: {csv_path}")
+                    print(f"[+] Balances CSV saved to: {csv_path}", file=progress_file)
 
         if do_holdings:
             holdings_res = client.fetch_holdings()
@@ -561,13 +600,13 @@ def main() -> int:
                 with open(args.output_holdings, "w", encoding="utf-8") as f:
                     json.dump(h_data, f, indent=2, ensure_ascii=False)
                 if not args.quiet:
-                    print(f"[+] Holdings snapshot saved to: {args.output_holdings}")
+                    print(f"[+] Holdings snapshot saved to: {args.output_holdings}", file=progress_file)
 
             if args.csv and args.output_holdings:
                 csv_path = args.output_holdings.with_suffix(".csv")
                 export_holdings_csv(holdings_res, csv_path)
                 if not args.quiet:
-                    print(f"[+] Holdings CSV saved to: {csv_path}")
+                    print(f"[+] Holdings CSV saved to: {csv_path}", file=progress_file)
 
         if do_transactions:
             start_date = args.start_date or f"{datetime.now(timezone.utc).year}-01-01"
@@ -591,13 +630,62 @@ def main() -> int:
                     with open(args.output_transactions, "w", encoding="utf-8") as f:
                         json.dump(t_data, f, indent=2, ensure_ascii=False)
                 if not args.quiet:
-                    print(f"[+] Transactions saved to: {args.output_transactions}")
+                    print(f"[+] Transactions saved to: {args.output_transactions}", file=progress_file)
 
             if args.csv and args.output_transactions:
                 csv_path = args.output_transactions.with_suffix(".csv")
                 export_transactions_csv(transactions_res, csv_path)
                 if not args.quiet:
-                    print(f"[+] Transactions CSV saved to: {csv_path}")
+                    print(f"[+] Transactions CSV saved to: {csv_path}", file=progress_file)
+
+        if args.beancount:
+            from empower_personal_dashboard.beancount import BeancountGenerator, BeancountMapper
+
+            # Ensure balances are available to enrich account identities and types
+            if not balances_res:
+                try:
+                    balances_res = client.fetch_balances()
+                except Exception as e:
+                    logger.debug("Could not fetch balances to enrich Beancount accounts: %s", e)
+
+            mapper = BeancountMapper(mapping_path=args.beancount_map)
+            generator = BeancountGenerator(mapper=mapper)
+            should_append = not args.overwrite_ledger
+
+            if args.output_beancount:
+                out_target = Path(args.output_beancount)
+                if out_target.suffix in (".bean", ".beancount"):
+                    generator.export_single_file(
+                        filepath=out_target,
+                        balances=balances_res,
+                        holdings=holdings_res,
+                        transactions=transactions_res,
+                        append=should_append,
+                    )
+                    action_msg = "appended to" if (out_target.exists() and should_append) else "saved to"
+                    if not args.quiet:
+                        print(f"[+] Beancount ledger {action_msg}: {out_target}", file=progress_file)
+                else:
+                    created = generator.export_modular_ledger(
+                        destination_dir=out_target,
+                        balances=balances_res,
+                        holdings=holdings_res,
+                        transactions=transactions_res,
+                        append=should_append,
+                    )
+                    if not args.quiet:
+                        print(f"[+] Beancount modular ledger ({len(created)} files) saved to: {out_target}", file=progress_file)
+            else:
+                dest_dir = Path("ledger")
+                created = generator.export_modular_ledger(
+                    destination_dir=dest_dir,
+                    balances=balances_res,
+                    holdings=holdings_res,
+                    transactions=transactions_res,
+                    append=should_append,
+                )
+                if not args.quiet:
+                    print(f"[+] Beancount modular ledger ({len(created)} files) saved to: {dest_dir}", file=progress_file)
 
     except SessionExpiredError as e:
         print(f"[!] {e}", file=sys.stderr)
@@ -627,6 +715,21 @@ def main() -> int:
                 print(render_holdings_markdown(holdings_res, limit=args.limit or 25))
             if transactions_res:
                 print(render_transactions_markdown(transactions_res, limit=args.limit or 25))
+        elif args.format == "beancount":
+            from empower_personal_dashboard.beancount import BeancountGenerator, BeancountMapper
+
+            mapper = BeancountMapper(mapping_path=args.beancount_map)
+            generator = BeancountGenerator(mapper=mapper)
+            output_parts = []
+            output_parts.append(generator.generate_accounts_bean(balances_res, holdings_res, transactions_res))
+            if balances_res or holdings_res:
+                output_parts.append(generator.generate_balances_bean(balances_res, holdings_res))
+            if holdings_res:
+                output_parts.append(generator.generate_holdings_bean(holdings_res, balances=balances_res))
+                output_parts.append(generator.generate_prices_bean(holdings_res))
+            if transactions_res:
+                output_parts.append(generator.generate_transactions_bean(transactions_res, balances=balances_res))
+            print("\n".join(part.strip() for part in output_parts if part.strip()))
         else:
             if balances_res:
                 print(render_balances_table(balances_res))

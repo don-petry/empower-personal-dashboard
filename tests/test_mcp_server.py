@@ -481,6 +481,47 @@ class TestMCPServer(unittest.TestCase):
                     self.assertTrue((dest / "empower_balances.json").exists())
                     self.assertFalse((dest / "empower_balances.csv").exists())
 
+            # Export with Beancount enabled
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with patch.dict(os.environ, {"EMPOWER_EXPORT_ROOT": tmpdir}):
+                    res_bean = await self.server.call_tool(
+                        "export_data",
+                        {"destination_dir": tmpdir, "scope": "all", "export_csv": False, "export_beancount": True},
+                    )
+                    payload_bean = json.loads(res_bean.content[0].text)
+                    self.assertEqual(payload_bean["status"], "success")
+                    dest = Path(tmpdir)
+                    main_bean = dest / "ledger" / "main.bean"
+                    accounts_bean = dest / "ledger" / "accounts.bean"
+                    balances_bean = dest / "ledger" / "balances.bean"
+                    holdings_bean = dest / "ledger" / "holdings.bean"
+                    prices_bean = dest / "ledger" / "prices.bean"
+                    transactions_bean = dest / "ledger" / "transactions.bean"
+
+                    self.assertTrue(main_bean.exists())
+                    self.assertIn('option "operating_currency" "USD"', main_bean.read_text(encoding="utf-8"))
+                    self.assertIn('include "holdings.bean"', main_bean.read_text(encoding="utf-8"))
+
+                    self.assertTrue(accounts_bean.exists())
+                    self.assertIn("open Equity:Opening-Balances", accounts_bean.read_text(encoding="utf-8"))
+
+                    self.assertTrue(balances_bean.exists())
+                    self.assertIn("balance Assets:", balances_bean.read_text(encoding="utf-8"))
+
+                    self.assertTrue(holdings_bean.exists())
+                    self.assertIn("Portfolio Snapshot", holdings_bean.read_text(encoding="utf-8"))
+
+                    self.assertTrue(prices_bean.exists())
+                    self.assertIn("price", prices_bean.read_text(encoding="utf-8"))
+
+                    self.assertTrue(transactions_bean.exists())
+                    self.assertIn("empower_id:", transactions_bean.read_text(encoding="utf-8"))
+
+            # Verify get_export_options tool contains beancount
+            res_options = await self.server.call_tool("get_export_options", {})
+            payload_options = json.loads(res_options.content[0].text)
+            self.assertIn("beancount", payload_options["supported_formats"])
+
         asyncio.run(run_check())
 
     def test_resources_and_prompts(self) -> None:
@@ -494,6 +535,14 @@ class TestMCPServer(unittest.TestCase):
 
             res_export = await self.server.read_resource("empower://export/options")
             self.assertIn("Export Options", str(res_export))
+            self.assertIn("Beancount", str(res_export))
+
+            # Read Beancount resources
+            res_prices = await self.server.read_resource("empower://beancount/prices")
+            self.assertIn("price", str(res_prices))
+
+            res_bean_bal = await self.server.read_resource("empower://beancount/balances")
+            self.assertIn("balance", str(res_bean_bal))
 
             # Get prompts
             prompt_res = await self.server.get_prompt("portfolio_review", {"risk_profile": "aggressive"})
@@ -505,6 +554,61 @@ class TestMCPServer(unittest.TestCase):
 
             prompt_top_holdings = await self.server.get_prompt("top_holdings_review", {"limit": 5})
             self.assertIn("top 5 investment holdings", prompt_top_holdings.messages[0].content.text)
+
+        asyncio.run(run_check())
+
+    def test_beancount_resources_handle_auth_error_gracefully(self) -> None:
+        if not self._require_server():
+            return
+
+        async def run_check() -> None:
+            from empower_personal_dashboard.exceptions import SessionExpiredError
+
+            error_client = EmpowerDashboardClient(mock_mode=True)
+            error_client.fetch_holdings = MagicMock(side_effect=SessionExpiredError("Expired session"))
+            error_client.fetch_balances = MagicMock(side_effect=SessionExpiredError("Expired session"))
+            error_client.fetch_transactions = MagicMock(side_effect=SessionExpiredError("Expired session"))
+            err_server = create_mcp_server(client=error_client)
+
+            res_prices = await err_server.read_resource("empower://beancount/prices")
+            self.assertIn(";; ERROR [AUTH_REQUIRED]", str(res_prices))
+            self.assertIn("empower --login", str(res_prices))
+
+            res_balances = await err_server.read_resource("empower://beancount/balances")
+            self.assertIn(";; ERROR [AUTH_REQUIRED]", str(res_balances))
+            self.assertIn("empower --login", str(res_balances))
+
+            res_tx = await err_server.read_resource("empower://beancount/transactions")
+            self.assertIn(";; ERROR [AUTH_REQUIRED]", str(res_tx))
+            self.assertIn("empower --login", str(res_tx))
+
+        asyncio.run(run_check())
+
+    def test_export_data_beancount_captures_balance_warnings(self) -> None:
+        if not self._require_server():
+            return
+
+        async def run_check() -> None:
+            from empower_personal_dashboard.exceptions import EmpowerError
+
+            warn_client = EmpowerDashboardClient(mock_mode=True)
+            warn_client.fetch_balances = MagicMock(side_effect=EmpowerError("Failed to fetch balances"))
+            warn_server = create_mcp_server(client=warn_client)
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with patch.dict(os.environ, {"EMPOWER_EXPORT_ROOT": tmpdir}):
+                    res = await warn_server.call_tool(
+                        "export_data",
+                        {
+                            "destination_dir": tmpdir,
+                            "scope": "transactions",
+                            "export_beancount": True,
+                        },
+                    )
+                    payload = json.loads(res.content[0].text)
+                    self.assertEqual(payload["status"], "success")
+                    self.assertIn("warnings", payload)
+                    self.assertTrue(any("Balances unavailable" in w for w in payload["warnings"]))
 
         asyncio.run(run_check())
 
