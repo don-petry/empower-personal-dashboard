@@ -25,12 +25,18 @@ empower-personal-dashboard/
 │   ├── exceptions.py         # Domain error hierarchy (EmpowerError, 2FA, SessionExpired)
 │   ├── cli.py                # Command-line interface with formatted tables, JSON, CSV
 │   └── mcp_server.py         # Model Context Protocol (FastMCP) server with tools & resources
+├── docs/
+│   ├── adr/                  # Architecture Decision Records (ADR-0001, ADR-0002)
+│   └── openapi.yaml          # Formal OpenAPI 3.1 specification (canonical wire & domain contract)
 ├── tests/
 │   ├── test_client.py        # Offline client unit tests (mocked endpoints)
 │   ├── test_models.py        # Dataclass parsing and aggregation logic
 │   ├── test_sanitizers.py    # Unicode replacement and whitespace cleaning
 │   ├── test_cli.py           # CLI invocation, formatting, and sandbox tests
-│   └── test_mcp_server.py    # FastMCP tools, error handling, and caching tests
+│   ├── test_mcp_server.py    # FastMCP tools, error handling, and caching tests
+│   └── test_openapi_contract.py # OpenAPI 3.1 contract and schema validation tests
+├── openapi.yaml              # Root symlink to docs/openapi.yaml
+├── redocly.yaml              # Redocly CLI linter configuration
 ├── pyproject.toml            # PEP 621 build configuration with SPDX MIT license
 └── requirements.txt          # Minimal runtime dependencies (requests>=2.28.0)
 ```
@@ -70,6 +76,12 @@ This repository adheres to strict Test-Driven Development as mandated by the org
   # Run all unit tests
   PYTHONPATH=. python3 -m unittest discover tests
 
+  # Run OpenAPI contract tests specifically (prerequisite: pip install -e ".[test]")
+  PYTHONPATH=. python3 -m unittest tests/test_openapi_contract.py
+
+  # Validate OpenAPI 3.1 specification syntax and rules
+  npx --yes @redocly/cli@2.57.0 lint docs/openapi.yaml
+
   # Byte-compile syntax and import verification
   python3 -m compileall empower_personal_dashboard tests
   ```
@@ -97,3 +109,17 @@ This repository adheres to strict Test-Driven Development as mandated by the org
 - **Pull Requests & Merge Policy:**
   - Automated CI runs the test suite and compile checks across Python 3.9–3.13.
   - Pull requests are merged using **Squash and Merge** to maintain a clean history on `main`.
+
+---
+
+## 6. OpenAPI 3.1 & Contract Testing Standards
+
+The repository adheres to formal API contract specifications as defined in [ADR-0002](docs/adr/0002-openapi-specification.md).
+
+- **Canonical Specification:** `docs/openapi.yaml` (mirrored via root `openapi.yaml`) serves as the authoritative interface contract for all upstream RPC-over-HTTP endpoints and canonical domain models.
+- **Two-Tier Architecture:**
+  - **Tier 1 (Upstream Wire Protocol):** Documents the reverse-engineered HTTP POST endpoints, `spHeader` status/error envelopes, session cookies (`JSESSIONID`), and CSRF tokens (`X-CSRF`).
+  - **Tier 2 (Domain Schemas):** Defines normalized schemas matching the Python domain models (`DashboardBalances`, `AccountBalance`, `DashboardHoldings`, `InvestmentHolding`, `DashboardTransactions`, `Transaction`) and the `NetWorthSummary` summary payload used by the CLI and MCP server.
+- **CI Enforcement:** Continuous integration runs `npx --yes @redocly/cli@2.57.0 lint docs/openapi.yaml` to ensure zero schema errors or rule violations on every commit and PR.
+- **Hermetic Contract Tests:** `tests/test_openapi_contract.py` validates synthetic test fixtures against OpenAPI schemas offline in under 1 second without network access.
+- **Zero-PII Examples:** All examples, schemas, and default values in the OpenAPI specification MUST strictly use synthetic placeholders.
