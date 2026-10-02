@@ -652,6 +652,92 @@ class TestBeancountGenerator(unittest.TestCase):
         )
         accounts_bean = self.generator.generate_accounts_bean(balances=None, transactions=tx_data)
         self.assertIn("open Assets:StandaloneBank:FreeChecking USD", accounts_bean)
+        # Accounts without balance assertions must NOT have pad directives
+        self.assertNotIn("pad Assets:StandaloneBank:FreeChecking", accounts_bean)
+
+    def test_generate_transactions_handles_negative_upstream_amount(self):
+        # Even if upstream API sends a negative spending amount, it must be normalized with abs()
+        tx_data = DashboardTransactions(
+            start_date="2026-09-01",
+            end_date="2026-09-30",
+            total_transactions=1,
+            money_in=0.0,
+            money_out=45.50,
+            net_cashflow=-45.50,
+            transactions=[
+                {
+                    "user_transaction_id": "tx-neg-1",
+                    "account_id": "ACC-NEG-001",
+                    "firm_name": "Ally Bank",
+                    "account_name": "Everyday Checking",
+                    "account_type": "bank",
+                    "transaction_date": "2026-09-15",
+                    "description": "Coffee Shop",
+                    "amount": -45.50,
+                    "is_credit": False,
+                    "is_cash_in": False,
+                    "is_cash_out": True,
+                    "is_income": False,
+                    "is_spending": True,
+                }
+            ],
+        )
+        output = self.generator.generate_transactions_bean(tx_data, balances=self.synthetic_balances)
+        self.assertIn("Assets:AllyBank:EverydayChecking       -45.50 USD", output)
+        self.assertIn("Expenses:Uncategorized                  45.50 USD", output)
+
+    def test_holdings_lots_aggregation_and_deduplication(self):
+        # Multiple lots of the same ticker in the same account are aggregated into one position
+        holdings_data = DashboardHoldings(
+            as_of_date="2026-10-01",
+            total_value=6000.0,
+            holdings=[
+                {
+                    "user_account_id": 1001,
+                    "account_name": "Everyday Checking",
+                    "ticker": "AAPL",
+                    "quantity": 10.0,
+                    "price": 200.0,
+                    "cost_basis": 1500.0,
+                },
+                {
+                    "user_account_id": 1001,
+                    "account_name": "Everyday Checking",
+                    "ticker": "AAPL",
+                    "quantity": 5.0,
+                    "price": 200.0,
+                    "cost_basis": 750.0,
+                },
+            ],
+        )
+        output = self.generator.generate_holdings_bean(holdings_data, balances=self.synthetic_balances)
+        self.assertEqual(output.count("AAPL Position"), 1)
+        self.assertIn("15.000000 AAPL {150.000000 USD} @ 200.0000 USD", output)
+        self.assertIn('empower_holding: "Assets:AllyBank:EverydayChecking:AAPL"', output)
+
+    def test_holdings_lots_skip_existing_on_append(self):
+        holdings_data = DashboardHoldings(
+            as_of_date="2026-10-01",
+            total_value=2000.0,
+            holdings=[
+                {
+                    "user_account_id": 1001,
+                    "account_name": "Everyday Checking",
+                    "ticker": "AAPL",
+                    "quantity": 10.0,
+                    "price": 200.0,
+                    "cost_basis": 1500.0,
+                },
+            ],
+        )
+        existing = '2026-09-30 * "Snapshot" "AAPL Position"\n  empower_holding: "Assets:AllyBank:EverydayChecking:AAPL"\n'
+        output = self.generator.generate_holdings_bean(
+            holdings_data,
+            balances=self.synthetic_balances,
+            existing_content=existing,
+        )
+        # The position should be skipped because it is already in existing_content
+        self.assertNotIn("10.000000 AAPL", output)
 
 
 if __name__ == "__main__":

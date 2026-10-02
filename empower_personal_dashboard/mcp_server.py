@@ -846,6 +846,7 @@ def create_mcp_server(
             balances: Optional[DashboardBalances] = None
             holdings: Optional[DashboardHoldings] = None
             tx_data: Optional[DashboardTransactions] = None
+            beancount_warnings: List[str] = []
 
             if do_balances:
                 balances = _fetch_balances_cached()
@@ -905,6 +906,7 @@ def create_mcp_server(
                     export_transactions_csv(tx_data, t_csv_path)
                     files_created.append({"file": str(t_csv_path), "format": "csv", "records": len(tx_data.transactions)})
 
+            beancount_warnings: List[str] = []
             if export_beancount:
                 from empower_personal_dashboard.beancount import BeancountGenerator, BeancountMapper
 
@@ -942,8 +944,9 @@ def create_mcp_server(
                 if balances is None:
                     try:
                         balances = _fetch_balances_cached()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Beancount export: balances unavailable: %s", e)
+                        beancount_warnings.append(f"Balances unavailable; ledger omits balance data: {e}")
 
                 b_mapper = BeancountMapper(mapping_path=beancount_map_path)
                 b_gen = BeancountGenerator(mapper=b_mapper)
@@ -967,7 +970,7 @@ def create_mcp_server(
                 for bf in b_files:
                     files_created.append({"file": str(bf), "format": "beancount", "records": None})
 
-            return {
+            resp: Dict[str, Any] = {
                 "status": "success",
                 "destination_dir": str(dest_path),
                 "scope": scope,
@@ -975,6 +978,9 @@ def create_mcp_server(
                 "files": files_created,
                 "summary": f"Successfully exported {len(files_created)} file(s) to {dest_path}.",
             }
+            if beancount_warnings:
+                resp["warnings"] = beancount_warnings
+            return resp
         except (SessionExpiredError, RequireTwoFactorException, FileNotFoundError):
             return {
                 "status": "error",
@@ -1036,38 +1042,71 @@ def create_mcp_server(
     @server.resource("empower://beancount/prices")
     def get_beancount_prices_resource() -> str:
         """Resource exposing investment commodity prices as Beancount price directives."""
-        holdings = _fetch_holdings_cached()
-        from empower_personal_dashboard.beancount import BeancountGenerator
+        try:
+            holdings = _fetch_holdings_cached()
+            from empower_personal_dashboard.beancount import BeancountGenerator
 
-        gen = BeancountGenerator()
-        return gen.generate_prices_bean(holdings)
+            gen = BeancountGenerator()
+            return gen.generate_prices_bean(holdings)
+        except (SessionExpiredError, RequireTwoFactorException, FileNotFoundError):
+            return (
+                ";; ERROR [AUTH_REQUIRED]: Empower session has expired or is not initialized.\n"
+                ";; Please run 'empower --login' in your local terminal to re-authenticate with 2FA.\n"
+            )
+        except EmpowerError as e:
+            return f";; ERROR [API_ERROR]: Empower API error: {e}\n"
+        except Exception as e:
+            logger.exception("Unexpected error in get_beancount_prices_resource")
+            return f";; ERROR [INTERNAL_ERROR]: {e}\n"
 
     @server.resource("empower://beancount/balances")
     def get_beancount_balances_resource() -> str:
         """Resource exposing accounts and commodity balances as Beancount directives."""
-        balances = _fetch_balances_cached()
-        holdings = _fetch_holdings_cached()
-        from empower_personal_dashboard.beancount import BeancountGenerator
+        try:
+            balances = _fetch_balances_cached()
+            holdings = _fetch_holdings_cached()
+            from empower_personal_dashboard.beancount import BeancountGenerator
 
-        gen = BeancountGenerator()
-        return gen.generate_accounts_bean(balances, holdings) + "\n" + gen.generate_balances_bean(balances, holdings)
+            gen = BeancountGenerator()
+            return gen.generate_accounts_bean(balances, holdings) + "\n" + gen.generate_balances_bean(balances, holdings)
+        except (SessionExpiredError, RequireTwoFactorException, FileNotFoundError):
+            return (
+                ";; ERROR [AUTH_REQUIRED]: Empower session has expired or is not initialized.\n"
+                ";; Please run 'empower --login' in your local terminal to re-authenticate with 2FA.\n"
+            )
+        except EmpowerError as e:
+            return f";; ERROR [API_ERROR]: Empower API error: {e}\n"
+        except Exception as e:
+            logger.exception("Unexpected error in get_beancount_balances_resource")
+            return f";; ERROR [INTERNAL_ERROR]: {e}\n"
 
     @server.resource("empower://beancount/transactions")
     def get_beancount_transactions_resource() -> str:
         """Resource exposing recent transactions as balanced Beancount double-entry directives."""
-        now = datetime.now(timezone.utc)
-        start_of_year = f"{now.year}-01-01"
-        today = now.strftime("%Y-%m-%d")
-        tx_data = _fetch_transactions_cached(start_date=start_of_year, end_date=today, limit=100)
-        balances = None
         try:
-            balances = _fetch_balances_cached()
-        except Exception:
-            pass
-        from empower_personal_dashboard.beancount import BeancountGenerator
+            now = datetime.now(timezone.utc)
+            start_of_year = f"{now.year}-01-01"
+            today = now.strftime("%Y-%m-%d")
+            tx_data = _fetch_transactions_cached(start_date=start_of_year, end_date=today, limit=100)
+            balances = None
+            try:
+                balances = _fetch_balances_cached()
+            except Exception as e:
+                logger.warning("Could not fetch balances to enrich Beancount transactions resource: %s", e)
+            from empower_personal_dashboard.beancount import BeancountGenerator
 
-        gen = BeancountGenerator()
-        return gen.generate_transactions_bean(tx_data, balances=balances)
+            gen = BeancountGenerator()
+            return gen.generate_transactions_bean(tx_data, balances=balances)
+        except (SessionExpiredError, RequireTwoFactorException, FileNotFoundError):
+            return (
+                ";; ERROR [AUTH_REQUIRED]: Empower session has expired or is not initialized.\n"
+                ";; Please run 'empower --login' in your local terminal to re-authenticate with 2FA.\n"
+            )
+        except EmpowerError as e:
+            return f";; ERROR [API_ERROR]: Empower API error: {e}\n"
+        except Exception as e:
+            logger.exception("Unexpected error in get_beancount_transactions_resource")
+            return f";; ERROR [INTERNAL_ERROR]: {e}\n"
 
     @server.resource("empower://export/options")
     def get_export_options_resource() -> str:

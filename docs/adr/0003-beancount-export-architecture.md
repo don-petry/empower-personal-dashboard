@@ -40,6 +40,7 @@ We decided to implement a **Pure-Python Native Beancount Export Engine** integra
      - `main.bean`: Operating currency (`USD`), ledger title, and includes.
      - `accounts.bean`: `open` and `pad` directives for accounts and equity.
      - `balances.bean`: Ground-truth `balance` assertions for cash and commodities.
+     - `holdings.bean`: Portfolio holdings with lot cost-basis and commodity positions.
      - `prices.bean`: Commodity `price` directives from portfolio holdings.
      - `transactions.bean`: Double-entry transactions with stable deduplication tags.
 
@@ -60,7 +61,7 @@ We decided to implement a **Pure-Python Native Beancount Export Engine** integra
 
 5. **Investment Holdings & Lot Tracking:**
    - Generates daily `price` directives for all tracked commodities/tickers.
-   - Emits native Beancount lot syntax (`{cost_basis CURRENCY, acquisition_date} @ price CURRENCY`) whenever lot cost basis and acquisition dates are available in Empower payloads.
+   - Emits native Beancount lot syntax (`{cost_basis CURRENCY} @ price CURRENCY`) whenever lot cost basis is available from Empower portfolio snapshots.
 
 6. **Stable Deduplication:**
    - Emits Empower's immutable `user_transaction_id` as Beancount transaction metadata (`empower_id`) and link (`^empower-tx-<id>`).
@@ -80,7 +81,7 @@ flowchart TD
         Mapper["BeancountMapper<br/>(YAML config & regex rules)"]
         Sanitize["Text Sanitizer<br/>(clean_api_text)"]
         Taxonomy["Taxonomy Classifier<br/>(Direct Firm Naming)"]
-        LotEngine["Lot & Basis Engine<br/>({cost, date} @ price)"]
+        LotEngine["Lot & Basis Engine<br/>({cost} @ price)"]
         Generator["BeancountGenerator<br/>(open, pad, balance, price, tx)"]
     end
 

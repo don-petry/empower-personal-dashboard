@@ -120,6 +120,62 @@ class TestCLI(unittest.TestCase):
             self.assertIn("option \"title\" \"Empower Personal Dashboard Ledger\"", content)
             self.assertIn("open Equity:Opening-Balances USD", content)
 
+    def test_cli_rejects_conflicting_append_and_overwrite(self):
+        argv = [
+            "empower",
+            "--sandbox",
+            "--all",
+            "--beancount",
+            "--append",
+            "--overwrite-ledger",
+        ]
+        with patch.object(sys, "argv", argv):
+            exit_code = cli_main()
+            self.assertNotEqual(exit_code, 0)
+
+    def test_cli_beancount_format_routes_progress_to_stderr(self):
+        import io
+        argv = [
+            "empower",
+            "--sandbox",
+            "--holdings",
+            "--format",
+            "beancount",
+        ]
+        stdout_buf = io.StringIO()
+        stderr_buf = io.StringIO()
+        with patch.object(sys, "argv", argv), patch("sys.stdout", stdout_buf), patch("sys.stderr", stderr_buf):
+            exit_code = cli_main()
+            self.assertEqual(exit_code, 0)
+
+        stdout_val = stdout_buf.getvalue()
+        stderr_val = stderr_buf.getvalue()
+        # Directives should be on stdout
+        self.assertIn("open Equity:Opening-Balances", stdout_val)
+        # Progress messages must NOT be on stdout
+        self.assertNotIn("[*] Querying Empower", stdout_val)
+        # Progress messages must be on stderr
+        self.assertIn("[*] Querying Empower", stderr_val)
+
+    def test_cli_holdings_only_beancount_includes_balance_assertions(self):
+        import io
+        argv = [
+            "empower",
+            "--sandbox",
+            "--holdings",
+            "--format",
+            "beancount",
+        ]
+        stdout_buf = io.StringIO()
+        stderr_buf = io.StringIO()
+        with patch.object(sys, "argv", argv), patch("sys.stdout", stdout_buf), patch("sys.stderr", stderr_buf):
+            exit_code = cli_main()
+            self.assertEqual(exit_code, 0)
+
+        stdout_val = stdout_buf.getvalue()
+        # Holdings-only format must include commodity unit balance assertions
+        self.assertIn("balance Assets:", stdout_val)
+
 
 if __name__ == "__main__":
     unittest.main()

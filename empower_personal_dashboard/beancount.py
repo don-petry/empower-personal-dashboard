@@ -9,11 +9,12 @@ Provides zero-heavy-dependency formatting for Beancount directives:
 - Modular and single-file export generation adhering to Beancount 2.x and 3.x standards
 """
 
+import datetime
 import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from empower_personal_dashboard.models import (
     DashboardBalances,
@@ -442,7 +443,6 @@ class BeancountGenerator:
                 if b_account not in seen_accounts:
                     seen_accounts.add(b_account)
                     lines.append(f"2000-01-01 open {b_account} USD\n")
-                    lines.append(f"2000-01-01 pad {b_account} Equity:Opening-Balances\n")
 
         # 3. Accounts from transactions
         if transactions and transactions.transactions:
@@ -466,14 +466,12 @@ class BeancountGenerator:
                 if b_account not in seen_accounts:
                     seen_accounts.add(b_account)
                     lines.append(f"2000-01-01 open {b_account} USD\n")
-                    lines.append(f"2000-01-01 pad {b_account} Equity:Opening-Balances\n")
 
         # 4. Open any custom mapped accounts
         for custom_acct in self.mapper.accounts.values():
             if custom_acct not in seen_accounts:
                 seen_accounts.add(custom_acct)
                 lines.append(f"2000-01-01 open {custom_acct} USD\n")
-                lines.append(f"2000-01-01 pad {custom_acct} Equity:Opening-Balances\n")
 
         return "".join(lines)
 
@@ -511,6 +509,8 @@ class BeancountGenerator:
         if holdings and holdings.holdings:
             as_of = holdings.as_of_date
             lines.append(f"\n;; Investment Commodity Unit Balances (as of {as_of})\n")
+            # Aggregate positions by (b_account, ticker) to avoid duplicate conflicting balance assertions
+            holding_units: Dict[Tuple[str, str], float] = {}
             for h in holdings.holdings:
                 ticker = (h.get("ticker") or "").strip().upper()
                 qty = float(h.get("quantity") or 0.0)
@@ -531,7 +531,10 @@ class BeancountGenerator:
 
                 if ticker and qty > 0:
                     b_account = self.mapper.resolve_account(firm, acct_name, acct_id, account_type=acct_type)
-                    lines.append(f"{as_of} balance {b_account} {_format_quantity(qty)} {ticker}\n")
+                    holding_units[(b_account, ticker)] = holding_units.get((b_account, ticker), 0.0) + qty
+
+            for (b_account, ticker), total_qty in sorted(holding_units.items()):
+                lines.append(f"{as_of} balance {b_account} {_format_quantity(total_qty)} {ticker}\n")
 
         return "".join(lines)
 
@@ -562,6 +565,7 @@ class BeancountGenerator:
         self,
         holdings: Optional[DashboardHoldings] = None,
         balances: Optional[DashboardBalances] = None,
+        existing_content: Optional[str] = None,
     ) -> str:
         """Generate investment positions with lot cost-basis and price tracking."""
         lines = [
@@ -574,7 +578,23 @@ class BeancountGenerator:
             return "".join(lines)
 
         as_of = holdings.as_of_date
+        # Date holdings snapshot transaction before the balance assertion date so Beancount's
+        # beginning-of-day balance assertion on as_of passes cleanly.
+        try:
+            d = datetime.date.fromisoformat(as_of)
+            lot_date = (d - datetime.timedelta(days=1)).isoformat()
+        except Exception:
+            lot_date = as_of
+
         acct_lookup = _build_account_lookup(balances)
+
+        # Existing holding tags to skip on append
+        existing_keys: Set[str] = set()
+        if existing_content:
+            existing_keys = set(re.findall(r'empower_holding:\s*"([^"]+)"', existing_content))
+
+        # Aggregate positions by (b_account, ticker) to emit each snapshot position only once
+        aggregated_holdings: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
         for h in holdings.holdings:
             ticker = (h.get("ticker") or "").strip().upper()
@@ -598,21 +618,53 @@ class BeancountGenerator:
 
             if ticker and qty > 0:
                 b_account = self.mapper.resolve_account(firm, acct_name, acct_id, account_type=acct_type)
-                payee_esc = _escape_beancount_string(f"{firm} Portfolio Snapshot")
-                narration_esc = _escape_beancount_string(f"{ticker} Position")
-                lines.append(f'{as_of} * "{payee_esc}" "{narration_esc}"\n')
-
-                if cost_basis is not None and float(cost_basis) > 0:
-                    unit_cost = float(cost_basis) / qty
-                    lines.append(
-                        f"  {b_account:<36} {_format_quantity(qty):>10} {ticker} "
-                        f"{{{_format_cost(unit_cost)} USD}} @ {_format_price(price)} USD\n"
-                    )
+                key = (b_account, ticker)
+                if key not in aggregated_holdings:
+                    aggregated_holdings[key] = {
+                        "firm": firm,
+                        "b_account": b_account,
+                        "ticker": ticker,
+                        "quantity": qty,
+                        "price": price,
+                        "cost_basis": float(cost_basis) if cost_basis is not None else None,
+                    }
                 else:
-                    lines.append(
-                        f"  {b_account:<36} {_format_quantity(qty):>10} {ticker} @ {_format_price(price)} USD\n"
-                    )
-                lines.append(f"  {'Equity:Opening-Balances':<36}\n\n")
+                    agg = aggregated_holdings[key]
+                    agg["quantity"] += qty
+                    if cost_basis is not None:
+                        curr_cb = agg["cost_basis"] or 0.0
+                        agg["cost_basis"] = curr_cb + float(cost_basis)
+                    if price > 0:
+                        agg["price"] = price
+
+        for pos in sorted(aggregated_holdings.values(), key=lambda p: (p["b_account"], p["ticker"])):
+            b_account = pos["b_account"]
+            ticker = pos["ticker"]
+            firm = pos["firm"]
+            qty = pos["quantity"]
+            price = pos["price"]
+            cost_basis = pos["cost_basis"]
+
+            holding_tag = f"{b_account}:{ticker}"
+            if holding_tag in existing_keys:
+                continue
+
+            payee_esc = _escape_beancount_string(f"{firm} Portfolio Snapshot")
+            narration_esc = _escape_beancount_string(f"{ticker} Position")
+            lines.append(f'{lot_date} * "{payee_esc}" "{narration_esc}"\n')
+            lines.append(f'  empower_holding: "{holding_tag}"\n')
+
+            if cost_basis is not None and float(cost_basis) > 0:
+                unit_cost = float(cost_basis) / qty
+                lines.append(
+                    f"  {b_account:<36} {_format_quantity(qty):>10} {ticker} "
+                    f"{{{_format_cost(unit_cost)} USD}} @ {_format_price(price)} USD\n"
+                )
+            else:
+                lines.append(
+                    f"  {b_account:<36} {_format_quantity(qty):>10} {ticker} @ {_format_price(price)} USD\n"
+                )
+            lines.append(f"  {'Equity:Opening-Balances':<36}\n\n")
 
         return "".join(lines)
 
@@ -664,7 +716,7 @@ class BeancountGenerator:
             payee = _escape_beancount_string(tx.get("description") or "Unknown Payee")
             cat_name = tx.get("category") or tx.get("category_name")
             narration = _escape_beancount_string(cat_name or tx.get("original_description") or "")
-            amount = float(tx.get("amount") or 0.0)
+            amount = abs(float(tx.get("amount") or 0.0))
 
             is_credit = bool(tx.get("is_credit"))
             is_cash_in = bool(tx.get("is_cash_in"))
@@ -697,13 +749,12 @@ class BeancountGenerator:
                 else:
                     acct_amount = -amount
                     bal_amount = amount
+            elif is_credit or is_cash_in or is_income:
+                acct_amount = amount
+                bal_amount = -amount
             else:
-                if is_credit or is_cash_in or is_income:
-                    acct_amount = amount
-                    bal_amount = -amount
-                else:
-                    acct_amount = -amount
-                    bal_amount = amount
+                acct_amount = -amount
+                bal_amount = amount
 
             # Format Beancount transaction block with safe escaping
             link_id = tx_id[3:] if tx_id.startswith("tx-") else tx_id
@@ -772,8 +823,17 @@ class BeancountGenerator:
         # 4. holdings.bean
         holdings_path = dest / "holdings.bean"
         _verify_file_symlink(holdings_path)
-        holdings_content = self.generate_holdings_bean(holdings, balances=balances) if holdings else ""
-        holdings_path.write_text(holdings_content, encoding="utf-8")
+        existing_h_text = holdings_path.read_text(encoding="utf-8") if (holdings_path.exists() and append) else None
+        holdings_content = self.generate_holdings_bean(holdings, balances=balances, existing_content=existing_h_text) if holdings else ""
+        if holdings_path.exists() and append:
+            if holdings_content:
+                body_start = holdings_content.find("\n\n")
+                to_append = holdings_content[body_start + 2:] if body_start != -1 else holdings_content
+                if to_append.strip():
+                    with open(holdings_path, "a", encoding="utf-8") as f:
+                        f.write(to_append)
+        else:
+            holdings_path.write_text(holdings_content, encoding="utf-8")
         created_files.append(holdings_path)
 
         # 5. prices.bean
@@ -855,7 +915,7 @@ class BeancountGenerator:
 
             # Append commodity holdings lots if available
             if holdings:
-                delta_chunks.append(self.generate_holdings_bean(holdings, balances=balances))
+                delta_chunks.append(self.generate_holdings_bean(holdings, balances=balances, existing_content=existing_content))
                 delta_chunks.append("\n")
 
             # Append price points
@@ -895,9 +955,9 @@ class BeancountGenerator:
             'option "operating_currency" "USD"\n\n',
             self.generate_accounts_bean(balances, holdings, transactions),
             "\n",
-            self.generate_balances_bean(balances, holdings),
-            "\n",
             self.generate_holdings_bean(holdings, balances=balances),
+            "\n",
+            self.generate_balances_bean(balances, holdings),
             "\n",
             self.generate_prices_bean(holdings),
             "\n",

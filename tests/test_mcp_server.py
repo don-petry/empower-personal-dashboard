@@ -557,6 +557,61 @@ class TestMCPServer(unittest.TestCase):
 
         asyncio.run(run_check())
 
+    def test_beancount_resources_handle_auth_error_gracefully(self) -> None:
+        if not self._require_server():
+            return
+
+        async def run_check() -> None:
+            from empower_personal_dashboard.exceptions import SessionExpiredError
+
+            error_client = EmpowerDashboardClient(mock_mode=True)
+            error_client.fetch_holdings = MagicMock(side_effect=SessionExpiredError("Expired session"))
+            error_client.fetch_balances = MagicMock(side_effect=SessionExpiredError("Expired session"))
+            error_client.fetch_transactions = MagicMock(side_effect=SessionExpiredError("Expired session"))
+            err_server = create_mcp_server(client=error_client)
+
+            res_prices = await err_server.read_resource("empower://beancount/prices")
+            self.assertIn(";; ERROR [AUTH_REQUIRED]", str(res_prices))
+            self.assertIn("empower --login", str(res_prices))
+
+            res_balances = await err_server.read_resource("empower://beancount/balances")
+            self.assertIn(";; ERROR [AUTH_REQUIRED]", str(res_balances))
+            self.assertIn("empower --login", str(res_balances))
+
+            res_tx = await err_server.read_resource("empower://beancount/transactions")
+            self.assertIn(";; ERROR [AUTH_REQUIRED]", str(res_tx))
+            self.assertIn("empower --login", str(res_tx))
+
+        asyncio.run(run_check())
+
+    def test_export_data_beancount_captures_balance_warnings(self) -> None:
+        if not self._require_server():
+            return
+
+        async def run_check() -> None:
+            from empower_personal_dashboard.exceptions import EmpowerError
+
+            warn_client = EmpowerDashboardClient(mock_mode=True)
+            warn_client.fetch_balances = MagicMock(side_effect=EmpowerError("Failed to fetch balances"))
+            warn_server = create_mcp_server(client=warn_client)
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with patch.dict(os.environ, {"EMPOWER_EXPORT_ROOT": tmpdir}):
+                    res = await warn_server.call_tool(
+                        "export_data",
+                        {
+                            "destination_dir": tmpdir,
+                            "scope": "transactions",
+                            "export_beancount": True,
+                        },
+                    )
+                    payload = json.loads(res.content[0].text)
+                    self.assertEqual(payload["status"], "success")
+                    self.assertIn("warnings", payload)
+                    self.assertTrue(any("Balances unavailable" in w for w in payload["warnings"]))
+
+        asyncio.run(run_check())
+
     def test_import_error_when_mcp_missing(self) -> None:
         with patch("empower_personal_dashboard.mcp_server.FastMCP", None):
             with self.assertRaises(ImportError) as ctx:
