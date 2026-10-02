@@ -170,6 +170,27 @@ regex_rules:
             regex_acct = mapper.resolve_category_or_payee("Other", "WHOLE FOODS #1023", True, False)
             self.assertEqual(regex_acct, "Expenses:Food:Groceries")
 
+    def test_yaml_mapping_quoted_key_with_colons(self):
+        content = """
+accounts:
+  "Benefits Express PWC: Wealth Builder": "Assets:BenefitsExpressPWC:WealthBuilder"
+  'PwC: Wealth Builder': 'Assets:PwC:WealthBuilder'
+"""
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+            f.write(content)
+            temp_path = f.name
+
+        with patch.dict("sys.modules", {"yaml": None}):
+            mapper = BeancountMapper(mapping_path=temp_path)
+            self.assertEqual(
+                mapper.accounts.get("Benefits Express PWC: Wealth Builder"),
+                "Assets:BenefitsExpressPWC:WealthBuilder",
+            )
+            self.assertEqual(
+                mapper.accounts.get("PwC: Wealth Builder"),
+                "Assets:PwC:WealthBuilder",
+            )
+
 
 class TestBeancountGenerator(unittest.TestCase):
     """Tests for generating compliant Beancount directives."""

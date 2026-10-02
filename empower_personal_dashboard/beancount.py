@@ -179,6 +179,21 @@ def _parse_simple_yaml(content: str) -> Dict[str, Any]:
             continue
 
         if current_section in ("accounts", "categories"):
+            if line.startswith('"'):
+                m = re.match(r'^"([^"]+)"\s*:\s*(.*)$', line)
+                if m:
+                    k, v = m.group(1).strip(), m.group(2).strip().strip('"').strip("'")
+                    if k and v:
+                        result[current_section][k] = v
+                    continue
+            elif line.startswith("'"):
+                m = re.match(r"^'([^']+)'\s*:\s*(.*)$", line)
+                if m:
+                    k, v = m.group(1).strip(), m.group(2).strip().strip('"').strip("'")
+                    if k and v:
+                        result[current_section][k] = v
+                    continue
+
             parts = line.split(":", 1)
             if len(parts) == 2:
                 k = parts[0].strip().strip('"').strip("'")
@@ -380,6 +395,52 @@ class BeancountMapper:
         return "Equity:Transfers"
 
 
+def _calculate_account_transaction_totals(
+    transactions: Optional[DashboardTransactions],
+    mapper: BeancountMapper,
+    acct_lookup: Dict[str, Dict[str, Any]],
+) -> Dict[str, float]:
+    """Calculate accumulated net posting amounts for each primary account across transactions."""
+    totals: Dict[str, float] = {}
+    if not transactions or not transactions.transactions:
+        return totals
+
+    for tx in transactions.transactions:
+        aid = str(tx.get("account_id") or "")
+        uaid = str(tx.get("user_account_id") or "")
+        t_name = tx.get("account_name") or ""
+
+        acct_info = acct_lookup.get(aid) or acct_lookup.get(uaid) or acct_lookup.get(t_name)
+        if acct_info:
+            firm = acct_info.get("firm_name") or "Institution"
+            name = acct_info.get("account_name") or t_name or "Account"
+            acct_type = acct_info.get("account_type") or "bank"
+            resolved_id = str(acct_info.get("account_id") or aid)
+            is_asset = acct_info.get("is_asset", True)
+        else:
+            firm = tx.get("firm_name") or "Institution"
+            name = t_name or "Account"
+            acct_type = tx.get("account_type") or "bank"
+            resolved_id = aid
+            is_asset = True
+
+        primary_account = mapper.resolve_account(firm, name, resolved_id, acct_type)
+        amount = float(tx.get("amount") or 0.0)
+        is_credit = bool(tx.get("is_credit"))
+        is_cash_in = bool(tx.get("is_cash_in"))
+        is_income = bool(tx.get("is_income"))
+        is_liability = primary_account.startswith("Liabilities") or (not is_asset)
+
+        if is_liability:
+            acct_amount = amount if (is_credit or is_cash_in) else -amount
+        else:
+            acct_amount = amount if (is_credit or is_cash_in or is_income) else -amount
+
+        totals[primary_account] = totals.get(primary_account, 0.0) + acct_amount
+
+    return totals
+
+
 class BeancountGenerator:
     """Generates Beancount directives and ledger files from Empower data models."""
 
@@ -407,6 +468,7 @@ class BeancountGenerator:
         balances: Optional[DashboardBalances] = None,
         holdings: Optional[DashboardHoldings] = None,
         transactions: Optional[DashboardTransactions] = None,
+        include_pads: bool = True,
     ) -> str:
         """Generate account open and pad directives across all provided datasets."""
         lines = [
@@ -469,7 +531,7 @@ class BeancountGenerator:
                         lines.append(f"2000-01-01 open {b_account}\n")
                     else:
                         lines.append(f"2000-01-01 open {b_account} {curr}\n")
-                    if abs(raw_bal) > 0.001:
+                    if abs(raw_bal) > 0.001 and include_pads:
                         lines.append(f"2000-01-01 pad {b_account} Equity:Opening-Balances\n")
 
         # 2. Accounts from holdings
@@ -493,7 +555,8 @@ class BeancountGenerator:
                 if b_account not in seen_accounts:
                     seen_accounts.add(b_account)
                     lines.append(f"2000-01-01 open {b_account}\n")
-                    lines.append(f"2000-01-01 pad {b_account} Equity:Opening-Balances\n")
+                    if include_pads:
+                        lines.append(f"2000-01-01 pad {b_account} Equity:Opening-Balances\n")
 
         # 3. Accounts from transactions
         if transactions and transactions.transactions:
@@ -556,6 +619,7 @@ class BeancountGenerator:
         self,
         balances: Optional[DashboardBalances] = None,
         holdings: Optional[DashboardHoldings] = None,
+        transactions: Optional[DashboardTransactions] = None,
     ) -> str:
         """Generate balance assertions for cash, liabilities, and investment commodities."""
         lines = [
@@ -586,6 +650,8 @@ class BeancountGenerator:
                 b_acct = self.mapper.resolve_account(h_firm, acct_name, h_id, h_type, is_asset=True)
                 commodity_accounts.add(b_acct)
 
+        tx_totals = _calculate_account_transaction_totals(transactions, self.mapper, acct_lookup) if transactions else {}
+
         if balances and balances.accounts:
             as_of = balances.as_of_date
             lines.append(f";; Cash & Liability Balances (as of {as_of})\n")
@@ -606,7 +672,9 @@ class BeancountGenerator:
 
                 # In Beancount, liabilities (credit cards, loans, mortgages) are represented as negative balances
                 bal_amt = raw_bal if is_asset else -abs(raw_bal)
-                if abs(bal_amt) > 0.001:
+                accumulated = tx_totals.get(b_account, 0.0) if transactions else 0.0
+                diff = bal_amt - accumulated
+                if abs(diff) > 0.005:
                     lines.append(f"2020-01-01 pad {b_account} Equity:Opening-Balances\n")
                 lines.append(f"{as_of} balance {b_account} {bal_amt:.2f} {curr}\n")
 
@@ -913,14 +981,14 @@ class BeancountGenerator:
         # 2. accounts.bean
         accounts_path = dest / "accounts.bean"
         _verify_file_symlink(accounts_path)
-        accounts_content = self.generate_accounts_bean(balances, holdings, transactions)
+        accounts_content = self.generate_accounts_bean(balances, holdings, transactions, include_pads=False)
         accounts_path.write_text(accounts_content, encoding="utf-8")
         created_files.append(accounts_path)
 
         # 3. balances.bean
         balances_path = dest / "balances.bean"
         _verify_file_symlink(balances_path)
-        balances_content = self.generate_balances_bean(balances, holdings)
+        balances_content = self.generate_balances_bean(balances, holdings, transactions=transactions)
         balances_path.write_text(balances_content, encoding="utf-8")
         created_files.append(balances_path)
 
@@ -1014,7 +1082,7 @@ class BeancountGenerator:
 
             # Append balance assertions if available
             if balances or holdings:
-                delta_chunks.append(self.generate_balances_bean(balances, holdings))
+                delta_chunks.append(self.generate_balances_bean(balances, holdings, transactions=transactions))
                 delta_chunks.append("\n")
 
             # Append commodity holdings lots if available
@@ -1057,11 +1125,12 @@ class BeancountGenerator:
             ";; ==============================================================================\n\n"
             'option "title" "Empower Personal Dashboard Ledger"\n'
             'option "operating_currency" "USD"\n\n',
-            self.generate_accounts_bean(balances, holdings, transactions),
+            'plugin "beancount.plugins.auto_accounts"\n\n',
+            self.generate_accounts_bean(balances, holdings, transactions, include_pads=False),
             "\n",
             self.generate_holdings_bean(holdings, balances=balances),
             "\n",
-            self.generate_balances_bean(balances, holdings),
+            self.generate_balances_bean(balances, holdings, transactions=transactions),
             "\n",
             self.generate_prices_bean(holdings),
             "\n",
