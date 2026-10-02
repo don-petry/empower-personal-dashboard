@@ -131,6 +131,19 @@ def _escape_beancount_string(val: Any) -> str:
     return text
 
 
+def _clean_ticker(ticker: Optional[str]) -> str:
+    """Clean and sanitize ticker to a strictly valid Beancount commodity symbol.
+
+    Replaces spaces and slashes (e.g. 'BRK B' or 'BRK/B') with dots, and strips
+    non-conforming characters.
+    """
+    if not ticker:
+        return ""
+    t = re.sub(r"[\s/]+", ".", str(ticker).strip().upper())
+    t = re.sub(r"[^A-Z0-9\'\._\-]", "", t)
+    return t
+
+
 def _format_quantity(qty: float) -> str:
     """Format commodity quantity with high precision preserving fractional shares."""
     return f"{qty:.6f}"
@@ -291,11 +304,14 @@ class BeancountMapper:
     ) -> str:
         """Resolve Beancount account name using overrides or slugification."""
         actual_type = kwargs.get("acct_type", account_type)
-        # Check explicit overrides by account_name or account_id
-        if account_name and account_name in self.accounts:
-            return self.accounts[account_name]
+        # Check explicit overrides by account_id, composite firm + account_name, then account_name
         if account_id and str(account_id) in self.accounts:
             return self.accounts[str(account_id)]
+        composite_key = f"{firm_name}: {account_name}"
+        if composite_key in self.accounts:
+            return self.accounts[composite_key]
+        if account_name and account_name in self.accounts:
+            return self.accounts[account_name]
 
         return slugify_account_name(firm_name, account_name, actual_type, is_asset=kwargs.get("is_asset"))
 
@@ -378,6 +394,7 @@ class BeancountGenerator:
             ";; ==============================================================================\n\n"
             'option "title" "Empower Personal Dashboard Ledger"\n'
             'option "operating_currency" "USD"\n\n'
+            'plugin "beancount.plugins.auto_accounts"\n\n'
             'include "accounts.bean"\n'
             'include "balances.bean"\n'
             'include "holdings.bean"\n'
@@ -407,6 +424,26 @@ class BeancountGenerator:
         seen_accounts: Set[str] = set()
         acct_lookup = _build_account_lookup(balances)
 
+        # Collect accounts that hold commodities from holdings
+        commodity_accounts: Set[str] = set()
+        if holdings and holdings.holdings:
+            for h in holdings.holdings:
+                uaid = str(h.get("user_account_id") or "")
+                h_name = h.get("account_name") or ""
+                acct_info = acct_lookup.get(uaid) or acct_lookup.get(h_name)
+                if acct_info:
+                    h_firm = acct_info.get("firm_name") or "Brokerage"
+                    acct_name = acct_info.get("account_name") or h_name or "Brokerage"
+                    h_type = acct_info.get("account_type") or "investment"
+                    h_id = str(acct_info.get("account_id") or uaid)
+                else:
+                    h_firm = h.get("firm_name") or "Brokerage"
+                    acct_name = h_name or "Brokerage"
+                    h_type = "investment"
+                    h_id = uaid
+                b_acct = self.mapper.resolve_account(h_firm, acct_name, h_id, h_type, is_asset=True)
+                commodity_accounts.add(b_acct)
+
         # 1. Accounts from balances
         if balances and balances.accounts:
             for acct in balances.accounts:
@@ -419,7 +456,13 @@ class BeancountGenerator:
                 b_account = self.mapper.resolve_account(firm, name, acct_id, acct_type)
                 if b_account not in seen_accounts:
                     seen_accounts.add(b_account)
-                    lines.append(f"2000-01-01 open {b_account} {curr}\n")
+                    if b_account in commodity_accounts or any(
+                        inv_word in str(acct_type).lower()
+                        for inv_word in ("invest", "broker", "ira", "401k", "roth", "rollover", "stock", "portfolio", "529", "other")
+                    ):
+                        lines.append(f"2000-01-01 open {b_account}\n")
+                    else:
+                        lines.append(f"2000-01-01 open {b_account} {curr}\n")
                     lines.append(f"2000-01-01 pad {b_account} Equity:Opening-Balances\n")
 
         # 2. Accounts from holdings
@@ -442,7 +485,8 @@ class BeancountGenerator:
                 b_account = self.mapper.resolve_account(firm, name, acct_id, acct_type)
                 if b_account not in seen_accounts:
                     seen_accounts.add(b_account)
-                    lines.append(f"2000-01-01 open {b_account} USD\n")
+                    lines.append(f"2000-01-01 open {b_account}\n")
+                    lines.append(f"2000-01-01 pad {b_account} Equity:Opening-Balances\n")
 
         # 3. Accounts from transactions
         if transactions and transactions.transactions:
@@ -467,11 +511,37 @@ class BeancountGenerator:
                     seen_accounts.add(b_account)
                     lines.append(f"2000-01-01 open {b_account} USD\n")
 
-        # 4. Open any custom mapped accounts
+        # 4. Open any custom mapped accounts, categories, and regex rule accounts
         for custom_acct in self.mapper.accounts.values():
             if custom_acct not in seen_accounts:
                 seen_accounts.add(custom_acct)
-                lines.append(f"2000-01-01 open {custom_acct} USD\n")
+                lines.append(f"2000-01-01 open {custom_acct}\n")
+
+        for cat_acct in self.mapper.categories.values():
+            if cat_acct not in seen_accounts:
+                seen_accounts.add(cat_acct)
+                lines.append(f"2000-01-01 open {cat_acct}\n")
+
+        for r in self.mapper.regex_rules:
+            r_acct = r.get("account")
+            if r_acct and r_acct not in seen_accounts:
+                seen_accounts.add(r_acct)
+                lines.append(f"2000-01-01 open {r_acct}\n")
+
+        # 5. Open any category / balancing accounts resolved from transactions
+        if transactions and transactions.transactions:
+            for tx in transactions.transactions:
+                cat_acct = self.mapper.resolve_category_or_payee(
+                    category=tx.get("category_name"),
+                    description=tx.get("description"),
+                    is_spending=bool(tx.get("is_spending", False)),
+                    is_income=bool(tx.get("is_income", False)),
+                    category_id=tx.get("category_id"),
+                    transaction_type=tx.get("transaction_type"),
+                )
+                if cat_acct and cat_acct not in seen_accounts:
+                    seen_accounts.add(cat_acct)
+                    lines.append(f"2000-01-01 open {cat_acct}\n")
 
         return "".join(lines)
 
@@ -512,7 +582,7 @@ class BeancountGenerator:
             # Aggregate positions by (b_account, ticker) to avoid duplicate conflicting balance assertions
             holding_units: Dict[Tuple[str, str], float] = {}
             for h in holdings.holdings:
-                ticker = (h.get("ticker") or "").strip().upper()
+                ticker = _clean_ticker(h.get("ticker"))
                 qty = float(h.get("quantity") or 0.0)
                 uaid = str(h.get("user_account_id") or "")
                 h_name = h.get("account_name") or ""
@@ -553,7 +623,7 @@ class BeancountGenerator:
             as_of = holdings.as_of_date
             seen_tickers: Set[str] = set()
             for h in holdings.holdings:
-                ticker = (h.get("ticker") or "").strip().upper()
+                ticker = _clean_ticker(h.get("ticker"))
                 price = float(h.get("price") or 0.0)
                 if ticker and price > 0 and ticker not in seen_tickers:
                     seen_tickers.add(ticker)
@@ -597,7 +667,7 @@ class BeancountGenerator:
         aggregated_holdings: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
         for h in holdings.holdings:
-            ticker = (h.get("ticker") or "").strip().upper()
+            ticker = _clean_ticker(h.get("ticker"))
             qty = float(h.get("quantity") or 0.0)
             price = float(h.get("price") or 0.0)
             cost_basis = h.get("cost_basis")
