@@ -404,7 +404,7 @@ class TestOpenApiContract(unittest.TestCase):
                 summary = asyncio.run(get_summary())
             else:
                 raise ImportError("FastMCP not installed")
-        except (ImportError, Exception):
+        except ImportError:
             client = EmpowerDashboardClient(mock_mode=True)
             balances = client.fetch_balances()
             summary = {
