@@ -249,7 +249,99 @@ class TestCLI(unittest.TestCase):
             self.assertIn("Test Paycheck", tx_content)
             self.assertIn("^empower-tx-TX999", tx_content)
 
+    @patch("empower_personal_dashboard.cli.EmpowerDashboardClient.fetch_transactions")
+    @patch("empower_personal_dashboard.cli.EmpowerDashboardClient.fetch_balances")
+    @patch("empower_personal_dashboard.cli.EmpowerDashboardClient.fetch_holdings")
+    def test_cli_all_without_start_date_passes_none_to_client(self, mock_holdings, mock_balances, mock_txs):
+        from empower_personal_dashboard.models import DashboardBalances, DashboardHoldings, DashboardTransactions
+
+        mock_balances.return_value = DashboardBalances(
+            as_of_date="2026-10-02",
+            net_worth=1000.0,
+            total_cash=1000.0,
+            total_investment=0.0,
+            total_credit_card=0.0,
+            total_loan=0.0,
+            total_mortgage=0.0,
+            accounts=[],
+        )
+        mock_holdings.return_value = DashboardHoldings(as_of_date="2026-10-02", total_value=0.0, holdings=[])
+        mock_txs.return_value = DashboardTransactions(
+            start_date="2018-01-01",
+            end_date="2026-10-02",
+            total_transactions=0,
+            money_in=0.0,
+            money_out=0.0,
+            net_cashflow=0.0,
+            transactions=[],
+        )
+
+        argv = ["empower", "--all", "--quiet", "--session-file", "/nonexistent/session.json", "--mock"]
+        with patch.object(sys, "argv", argv):
+            exit_code = cli_main()
+            self.assertEqual(exit_code, 0)
+
+        mock_txs.assert_called_once()
+        _, kwargs = mock_txs.call_args
+        self.assertIsNone(kwargs.get("start_date"))
+
+    @patch("empower_personal_dashboard.cli.EmpowerDashboardClient.fetch_transactions")
+    def test_cli_transactions_without_start_date_passes_none_to_client(self, mock_txs):
+        from empower_personal_dashboard.models import DashboardTransactions
+
+        mock_txs.return_value = DashboardTransactions(
+            start_date="2018-01-01",
+            end_date="2026-10-02",
+            total_transactions=0,
+            money_in=0.0,
+            money_out=0.0,
+            net_cashflow=0.0,
+            transactions=[],
+        )
+
+        argv = ["empower", "--transactions", "--quiet", "--session-file", "/nonexistent/session.json", "--mock"]
+        with patch.object(sys, "argv", argv):
+            exit_code = cli_main()
+            self.assertEqual(exit_code, 0)
+
+        mock_txs.assert_called_once()
+        _, kwargs = mock_txs.call_args
+        self.assertIsNone(kwargs.get("start_date"))
+
+    @patch("empower_personal_dashboard.cli.EmpowerDashboardClient.fetch_transactions")
+    def test_cli_transactions_with_explicit_start_date(self, mock_txs):
+        from empower_personal_dashboard.models import DashboardTransactions
+
+        mock_txs.return_value = DashboardTransactions(
+            start_date="2024-01-01",
+            end_date="2026-10-02",
+            total_transactions=0,
+            money_in=0.0,
+            money_out=0.0,
+            net_cashflow=0.0,
+            transactions=[],
+        )
+
+        argv = [
+            "empower",
+            "--transactions",
+            "--start-date",
+            "2024-01-01",
+            "--quiet",
+            "--session-file",
+            "/nonexistent/session.json",
+            "--mock",
+        ]
+        with patch.object(sys, "argv", argv):
+            exit_code = cli_main()
+            self.assertEqual(exit_code, 0)
+
+        mock_txs.assert_called_once()
+        _, kwargs = mock_txs.call_args
+        self.assertEqual(kwargs.get("start_date"), "2024-01-01")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

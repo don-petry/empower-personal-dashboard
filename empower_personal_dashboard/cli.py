@@ -100,7 +100,7 @@ def parse_args() -> argparse.Namespace:
         "--start-date",
         type=str,
         default=None,
-        help="Transactions start date (YYYY-MM-DD). Defaults to Jan 1 of current year.",
+        help="Transactions start date (YYYY-MM-DD). If omitted, extracts all historical transactions.",
     )
     parser.add_argument(
         "--end-date",
@@ -741,7 +741,7 @@ def main() -> int:
                 if not args.quiet:
                     print(f"[+] Loaded {transactions_res.total_transactions} transactions ({transactions_res.start_date} to {transactions_res.end_date}) from: {in_t}", file=progress_file)
             else:
-                start_date = args.start_date or f"{datetime.now(timezone.utc).year}-01-01"
+                start_date = args.start_date
                 end_date = args.end_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
                 transactions_res = client.fetch_transactions(
                     start_date=start_date,

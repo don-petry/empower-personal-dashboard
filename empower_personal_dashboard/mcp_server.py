@@ -781,7 +781,7 @@ def create_mcp_server(
             export_csv: Whether to write companion .csv files alongside JSON (default: True).
             export_beancount: Whether to generate Beancount plain-text ledger files (.bean) (default: False).
             beancount_map_path: Optional path to YAML/JSON Beancount account/category mapping configuration.
-            start_date: Optional earliest date for transactions export (YYYY-MM-DD). Defaults to Jan 1 of current year.
+            start_date: Optional earliest date for transactions export (YYYY-MM-DD). If omitted, exports all historical transactions.
             end_date: Optional latest date for transactions export (YYYY-MM-DD). Defaults to today.
             limit: Optional maximum record limit for transactions.
 
@@ -885,7 +885,7 @@ def create_mcp_server(
                     files_created.append({"file": str(h_csv_path), "format": "csv", "records": len(holdings.holdings)})
 
             if do_transactions:
-                s_date = start_date or f"{datetime.now(timezone.utc).year}-01-01"
+                s_date = start_date
                 e_date = end_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
                 tx_data = _fetch_transactions_cached(start_date=s_date, end_date=e_date, limit=limit)
 

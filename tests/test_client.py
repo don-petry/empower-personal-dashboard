@@ -235,6 +235,29 @@ class TestClientDataParsing(unittest.TestCase):
         self.assertEqual(txs.transactions[0]["transaction_date"], "2026-09-25")
         self.assertEqual(txs.transactions[1]["transaction_date"], "2026-09-05")
 
+    @patch("requests.Session.post")
+    def test_fetch_transactions_omits_start_date_when_none(self, mock_post):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "spHeader": {"success": True},
+            "spData": {
+                "startDate": "2018-05-12",
+                "endDate": "2026-10-02",
+                "moneyIn": 0.0,
+                "moneyOut": 0.0,
+                "netCashflow": 0.0,
+                "transactions": [],
+            },
+        }
+        mock_post.return_value = mock_resp
+
+        txs = self.client.fetch_transactions(start_date=None)
+        args, kwargs = mock_post.call_args
+        payload = kwargs.get("data", {})
+        self.assertNotIn("startDate", payload)
+        self.assertEqual(txs.start_date, "2018-05-12")
+
 
 class TestClientMockMode(unittest.TestCase):
     def test_offline_sandbox_mock_generators(self):
@@ -254,6 +277,17 @@ class TestClientMockMode(unittest.TestCase):
         self.assertEqual(txs.mode, "sandbox_mock")
         self.assertGreater(txs.total_transactions, 0)
 
+    def test_mock_transactions_start_date_reflects_oldest_mock(self):
+        client = EmpowerDashboardClient(mock_mode=True)
+        txs = client.fetch_transactions(start_date=None)
+        self.assertEqual(txs.start_date, min(t["transaction_date"] for t in txs.transactions))
+
+    def test_mock_transactions_explicit_start_date(self):
+        client = EmpowerDashboardClient(mock_mode=True)
+        txs = client.fetch_transactions(start_date="2024-01-01")
+        self.assertEqual(txs.start_date, "2024-01-01")
+
 
 if __name__ == "__main__":
     unittest.main()
+

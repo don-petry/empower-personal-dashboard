@@ -790,7 +790,6 @@ class EmpowerDashboardClient:
         limit: Optional[int] = None,
     ) -> DashboardTransactions:
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        start = start_date or f"{datetime.now(timezone.utc).year}-01-01"
         end = end_date or today_str
         mock_txs = [
             {
@@ -892,6 +891,9 @@ class EmpowerDashboardClient:
         ]
         if limit and limit > 0:
             mock_txs = mock_txs[:limit]
+
+        dates = [t.get("transaction_date") for t in mock_txs if t.get("transaction_date")]
+        start = start_date or (min(dates) if dates else f"{datetime.now(timezone.utc).year}-01-01")
 
         money_in = sum(t["amount"] for t in mock_txs if t["is_cash_in"])
         money_out = sum(t["amount"] for t in mock_txs if t["is_cash_out"])
