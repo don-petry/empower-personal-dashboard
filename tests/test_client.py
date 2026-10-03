@@ -48,6 +48,25 @@ class TestClientSessionPersistence(unittest.TestCase):
         client = EmpowerDashboardClient(session_file=Path("/nonexistent/file.json"), mock_mode=False)
         self.assertFalse(client.load_session())
 
+    def test_session_file_from_env_expands_tilde(self):
+        # A `~`-prefixed EMPOWER_SESSION_FILE must resolve to the home directory,
+        # not a literal "~" folder under the CWD.
+        with patch.dict(
+            os.environ,
+            {"EMPOWER_SESSION_FILE": "~/.empower_personal_dashboard_session.json"},
+            clear=False,
+        ):
+            client = EmpowerDashboardClient(mock_mode=True)
+        expected = Path.home() / ".empower_personal_dashboard_session.json"
+        self.assertEqual(client.session_file, expected)
+        self.assertNotIn("~", str(client.session_file))
+
+    def test_explicit_session_file_expands_tilde(self):
+        client = EmpowerDashboardClient(
+            session_file="~/some_session.json", mock_mode=True
+        )
+        self.assertEqual(client.session_file, Path.home() / "some_session.json")
+
 
 class TestClientAuthentication(unittest.TestCase):
     def setUp(self):

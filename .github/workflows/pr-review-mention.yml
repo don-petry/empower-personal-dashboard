@@ -39,6 +39,12 @@ permissions: {}
 
 jobs:
   pr-review-mention:
+    # Skip fork-origin pull_request (review_requested) events: forks get no org
+    # secrets, so GH_PAT_DON_PETRY/GH_PAT_WORKFLOWS resolve empty and the reusable
+    # cannot authenticate, producing a failed/no-op run on every external PR. The
+    # issue_comment / pull_request_review_comment mention triggers are unaffected
+    # (they are not `pull_request`). Same guard pattern as copilot-setup-steps.yml.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     permissions:
       pull-requests: write
     uses: petry-projects/.github/.github/workflows/pr-review-mention-reusable.yml@pr-review-mention/v2-stable  # NOSONAR(githubactions:S7637) first-party channel ref

@@ -76,7 +76,9 @@ class EmpowerDashboardClient:
         debug: bool = False,
         log_file: Optional[Union[str, Path]] = None,
     ):
-        self.session_file = Path(session_file or os.environ.get("EMPOWER_SESSION_FILE", DEFAULT_SESSION_FILE))
+        # `.expanduser()` so a `~`-prefixed EMPOWER_SESSION_FILE resolves to the
+        # home directory rather than a literal "~" folder in the CWD.
+        self.session_file = Path(session_file or os.environ.get("EMPOWER_SESSION_FILE", DEFAULT_SESSION_FILE)).expanduser()
         self.base_url = base_url.rstrip("/")
         self.api_endpoint = f"{self.base_url}/api"
         self.timeout = timeout_seconds
