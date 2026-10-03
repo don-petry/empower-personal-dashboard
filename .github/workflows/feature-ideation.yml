@@ -190,6 +190,11 @@ jobs:
       # `target_discussion` is forwarded by the `redispatch` bridge above on
       # `discussion: created`; empty on schedule/dispatch → normal scan.
       target_discussion: ${{ needs.prep.outputs.target_discussion }}
+      # Keep the signal-collection tooling on the SAME ref as the reusable. The
+      # reusable defaults tooling_ref to `v1`, where scripts/feature-ideation-
+      # requirements.txt is absent, so every run would stop before ideation.
+      # Pinning it to the reusable's own channel tag keeps workflow + tooling together.
+      tooling_ref: feature-ideation/v1-stable
       # === CUSTOMISE THIS PER REPO — the only required edit ===
       # Replace this paragraph with a 3-5 sentence description of your project,
       # its target users, and the competitive landscape. The more specific you

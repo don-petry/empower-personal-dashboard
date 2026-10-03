@@ -47,6 +47,22 @@ DEFAULT_HEADERS = {
     "Accept-Encoding": "identity",
 }
 
+# Values that mean "off" for a boolean environment variable. Without this, any
+# non-empty string (including "0" / "false") would be truthy, so EMPOWER_DEBUG=0
+# would silently enable debug logging and expose sensitive auth details.
+_FALSY_ENV_VALUES = frozenset({"", "0", "false", "no", "off", "none"})
+
+
+def _env_flag(value: Optional[str]) -> bool:
+    """Interpret an environment-variable string as a boolean.
+
+    Unset, empty, and common falsy spellings ("0", "false", "no", "off",
+    "none", case-insensitive) are False; every other value is True.
+    """
+    if value is None:
+        return False
+    return value.strip().lower() not in _FALSY_ENV_VALUES
+
 
 class EmpowerDashboardClient:
     """Client for interacting with Empower Personal Dashboard API."""
@@ -65,7 +81,7 @@ class EmpowerDashboardClient:
         self.api_endpoint = f"{self.base_url}/api"
         self.timeout = timeout_seconds
         self.mock_mode = mock_mode
-        self.debug = debug or bool(os.environ.get("EMPOWER_DEBUG"))
+        self.debug = debug or _env_flag(os.environ.get("EMPOWER_DEBUG"))
         self.log_file = Path(log_file) if log_file else None
         self.session = requests.Session()
         self.csrf: str = ""
