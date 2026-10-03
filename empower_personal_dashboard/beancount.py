@@ -338,11 +338,12 @@ class BeancountMapper:
         is_income: bool = False,
         category_id: Optional[Union[str, int]] = None,
         transaction_type: Optional[str] = None,
+        memo: Optional[str] = None,
     ) -> str:
         """Resolve the offsetting balancing leg for a transaction.
 
         Order of precedence:
-        1. Regex payee rules (matching description).
+        1. Regex payee rules (matching description and memo).
         2. Category name overrides from mapping.
         3. Category ID overrides from mapping.
         4. Transfer detection (non-income and non-spending, or transfer keywords) -> Equity:Transfers.
@@ -350,7 +351,8 @@ class BeancountMapper:
         6. Spending transactions -> Expenses:Uncategorized.
         7. Default fallback -> Expenses:Uncategorized.
         """
-        desc_clean = clean_api_text(description or "")
+        combined = f"{description or ''} {memo or ''}".strip()
+        desc_clean = clean_api_text(combined)
 
         # 1. Match regex payee rules first
         for rule in self.regex_rules:
@@ -608,6 +610,7 @@ class BeancountGenerator:
                     is_income=bool(tx.get("is_income", False)),
                     category_id=tx.get("category_id"),
                     transaction_type=tx.get("transaction_type"),
+                    memo=tx.get("original_description"),
                 )
                 if cat_acct and cat_acct not in seen_accounts:
                     seen_accounts.add(cat_acct)
@@ -903,6 +906,7 @@ class BeancountGenerator:
                 is_income=is_income,
                 category_id=tx.get("category_id"),
                 transaction_type=tx.get("transaction_type"),
+                memo=tx.get("original_description"),
             )
 
             # Determine double-entry posting signs:
