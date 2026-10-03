@@ -75,11 +75,13 @@ def get_package_version(pyproject_path: Path | None = None) -> str:
     text = path.read_text(encoding="utf-8")
     try:
         import tomllib
-
-        data = tomllib.loads(text)
-        return str(data.get("project", {}).get("version", ""))
     except ImportError:
-        return _project_version_from_text(text)
+        try:
+            import tomli as tomllib  # type: ignore[no-redef]
+        except ImportError:
+            return _project_version_from_text(text)
+    data = tomllib.loads(text)
+    return str(data.get("project", {}).get("version", ""))
 
 
 def is_version_published_on_pypi(package_name: str = PACKAGE_NAME, version: str = "") -> bool:

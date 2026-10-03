@@ -120,6 +120,12 @@ class TestPackaging(unittest.TestCase):
             custom_toml.write_text('[project]\nname = "test"\nversion = "1.2.3"\n', encoding="utf-8")
             self.assertEqual(get_package_version(custom_toml), "1.2.3")
 
+            # Fallback to regex when both tomllib and tomli are unavailable
+            with patch.dict("sys.modules", {"tomllib": None, "tomli": None}):
+                spaced_toml = Path(tmpdir) / "spaced.toml"
+                spaced_toml.write_text('[project]\nversion = "2.3.4"\n', encoding="utf-8")
+                self.assertEqual(get_package_version(spaced_toml), "2.3.4")
+
     def test_project_version_from_text_scoped_to_project_section(self):
         from scripts.pypi_onboard import _project_version_from_text
 
