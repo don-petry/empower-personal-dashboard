@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,74 @@ PENDING_PUBLISHER_HINT = (
     "4. Once added, subsequent GitHub Actions release runs publish automatically\n"
     "   over OIDC with zero permanent tokens needed."
 )
+
+
+def _project_version_from_text(text: str) -> str:
+    """Regex fallback for reading ``[project].version`` without a TOML parser.
+
+    Used only when ``tomllib`` is unavailable (Python < 3.11). The search is
+    scoped to the ``[project]`` table so a ``version`` key in a ``[tool.*]`` or
+    dependency table cannot be mistaken for the package version (which would make
+    the release workflow publish under a bogus tag).
+    """
+    in_project = False
+    for raw_line in text.splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if line.startswith("[") and line.endswith("]"):
+            in_project = line == "[project]"
+            continue
+        if in_project:
+            match = re.match(r'version\s*=\s*["\']([^"\']+)["\']', line)
+            if match:
+                return match.group(1)
+    return ""
+
+
+def get_package_version(pyproject_path: Path | None = None) -> str:
+    """Read the package version string from pyproject.toml."""
+    path = pyproject_path or Path(__file__).resolve().parent.parent / "pyproject.toml"
+    text = path.read_text(encoding="utf-8")
+    try:
+        import tomllib
+    except ImportError:
+        try:
+            import tomli as tomllib  # type: ignore[no-redef]
+        except ImportError:
+            return _project_version_from_text(text)
+    data = tomllib.loads(text)
+    return str(data.get("project", {}).get("version", ""))
+
+
+def is_version_published_on_pypi(package_name: str = PACKAGE_NAME, version: str = "") -> bool:
+    """Check PyPI JSON API to see if a specific release version is already published."""
+    if not version:
+        return False
+    url = f"{PYPI_API_BASE}/{package_name}/{version}/json"
+    req = urllib.request.Request(url, headers={"User-Agent": f"pypi-onboard/{package_name}"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status == 200
+    except urllib.error.HTTPError as err:
+        if err.code == 404:
+            return False
+        raise
+
+
+def should_release_version(
+    version: str,
+    existing_tags: list[str],
+    check_pypi: bool = False,
+    package_name: str = PACKAGE_NAME,
+) -> bool:
+    """Return True if the version is non-empty, not in existing tags, and not on PyPI."""
+    if not version:
+        return False
+    tag = f"v{version}"
+    if tag in existing_tags or version in existing_tags:
+        return False
+    if check_pypi and is_version_published_on_pypi(package_name, version):
+        return False
+    return True
 
 
 def check_pypi_status(package_name: str = PACKAGE_NAME) -> tuple[str, str]:
@@ -104,10 +173,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Onboard and verify PyPI package publishing.")
     parser.add_argument("--dry-run", action="store_true", default=True, help="Validate without publishing (default)")
     parser.add_argument("--build", action="store_true", help="Build and verify distribution packages")
+    parser.add_argument(
+        "--package-version",
+        "--version",
+        action="store_true",
+        dest="show_version",
+        help="Print package version from pyproject.toml and exit",
+    )
     args = parser.parse_args(argv)
 
     root_dir = Path(__file__).resolve().parent.parent
     dist_dir = root_dir / "dist"
+
+    if args.show_version:
+        version = get_package_version(root_dir / "pyproject.toml")
+        print(version)
+        return 0
 
     print(f"=== PyPI Onboarding: {PACKAGE_NAME} ===\n")
 

@@ -173,8 +173,8 @@ regex_rules:
     def test_yaml_mapping_quoted_key_with_colons(self):
         content = """
 accounts:
-  "Benefits Express PWC: Wealth Builder": "Assets:BenefitsExpressPWC:WealthBuilder"
-  'PwC: Wealth Builder': 'Assets:PwC:WealthBuilder'
+  "Acme Benefits: Plan A": "Assets:AcmeBenefits:PlanA"
+  'Acme Corp: Plan B': 'Assets:AcmeCorp:PlanB'
 """
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
             f.write(content)
@@ -183,12 +183,12 @@ accounts:
         with patch.dict("sys.modules", {"yaml": None}):
             mapper = BeancountMapper(mapping_path=temp_path)
             self.assertEqual(
-                mapper.accounts.get("Benefits Express PWC: Wealth Builder"),
-                "Assets:BenefitsExpressPWC:WealthBuilder",
+                mapper.accounts.get("Acme Benefits: Plan A"),
+                "Assets:AcmeBenefits:PlanA",
             )
             self.assertEqual(
-                mapper.accounts.get("PwC: Wealth Builder"),
-                "Assets:PwC:WealthBuilder",
+                mapper.accounts.get("Acme Corp: Plan B"),
+                "Assets:AcmeCorp:PlanB",
             )
 
 
