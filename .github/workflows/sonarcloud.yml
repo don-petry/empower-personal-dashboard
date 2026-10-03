@@ -3,14 +3,24 @@
 # Standard:        petry-projects/.github/standards/ci-standards.md#3-sonarcloud-analysis
 #
 # ADOPTING THIS WORKFLOW:
-#   1. This ships verbatim into repos created from petry-projects/repo-template.
+#   1. This ships from petry-projects/repo-template, then is tailored per repo —
+#      see REPO-SPECIFIC TAILORING below; the surrounding scan scaffolding stays
+#      verbatim with the standard.
 #   2. Set sonar.projectKey / sonar.organization in sonar-project.properties to
 #      match your repo (see BOOTSTRAP.md), and add the SONAR_TOKEN repo secret.
 #   3. The job name `SonarCloud` is the required status check — keep it.
 #   4. The scan is guarded on SONAR_TOKEN, so the job is a green no-op until the
 #      secret is set — a fresh repo is not blocked on day 0.
 #
-# CONVENTIONS (enforced by the standard):
+# REPO-SPECIFIC TAILORING (NOT from the verbatim source — do not treat as drift
+# on a template sync, and do not silently drop on a standards audit):
+#   • The "Set up Python" + "Generate coverage report" steps below are added for
+#     this repo: they install requirements.txt and the `.[mcp,test]` extras and
+#     run `coverage` to emit coverage.xml, because the `coverage` job lives in
+#     ci.yml (a separate workflow) and GitHub has no cross-workflow `needs:`.
+#     The standard's sonarcloud.yml does not carry these steps.
+#
+# CONVENTIONS (enforced by the standard, for the non-tailored scaffolding):
 #   • permissions: {} at top, least-privilege per job (contents + pull-requests: read)
 #   • triggers: push + pull_request to main; checkout with fetch-depth: 0
 #   • first scan is continue-on-error with a single retry (SonarCloud's analysis
