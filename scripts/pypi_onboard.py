@@ -58,7 +58,7 @@ def _project_version_from_text(text: str) -> str:
     """
     in_project = False
     for raw_line in text.splitlines():
-        line = raw_line.strip()
+        line = raw_line.split("#", 1)[0].strip()
         if line.startswith("[") and line.endswith("]"):
             in_project = line == "[project]"
             continue
@@ -82,12 +82,38 @@ def get_package_version(pyproject_path: Path | None = None) -> str:
         return _project_version_from_text(text)
 
 
-def should_release_version(version: str, existing_tags: list[str]) -> bool:
-    """Return True if the version is non-empty and does not exist in the list of existing tags."""
+def is_version_published_on_pypi(package_name: str = PACKAGE_NAME, version: str = "") -> bool:
+    """Check PyPI JSON API to see if a specific release version is already published."""
+    if not version:
+        return False
+    url = f"{PYPI_API_BASE}/{package_name}/{version}/json"
+    req = urllib.request.Request(url, headers={"User-Agent": f"pypi-onboard/{package_name}"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status == 200
+    except urllib.error.HTTPError as err:
+        if err.code == 404:
+            return False
+        return False
+    except Exception:
+        return False
+
+
+def should_release_version(
+    version: str,
+    existing_tags: list[str],
+    check_pypi: bool = False,
+    package_name: str = PACKAGE_NAME,
+) -> bool:
+    """Return True if the version is non-empty, not in existing tags, and not on PyPI."""
     if not version:
         return False
     tag = f"v{version}"
-    return tag not in existing_tags and version not in existing_tags
+    if tag in existing_tags or version in existing_tags:
+        return False
+    if check_pypi and is_version_published_on_pypi(package_name, version):
+        return False
+    return True
 
 
 def check_pypi_status(package_name: str = PACKAGE_NAME) -> tuple[str, str]:

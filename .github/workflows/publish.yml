@@ -91,12 +91,12 @@ jobs:
             # Capture into a variable (not inline in the `if`) so a broken gate — import
             # error, refactored module, unexpected stderr — aborts the step loudly instead
             # of returning "" and silently taking the "tag already exists" branch.
-            if ! SHOULD_RELEASE=$(python -c 'import sys; from scripts.pypi_onboard import should_release_version; print("true" if should_release_version(sys.argv[1], sys.argv[2:]) else "false")' "${VERSION}" $(git tag)); then
+            if ! SHOULD_RELEASE=$(python -c 'import sys; from scripts.pypi_onboard import should_release_version; print("true" if should_release_version(sys.argv[1], sys.argv[2:], check_pypi=True) else "false")' "${VERSION}" $(git tag)); then
               echo "::error::Release gate (scripts.pypi_onboard.should_release_version) failed to run; aborting rather than skipping the release."
               exit 1
             fi
             if [ "${SHOULD_RELEASE}" != "true" ]; then
-              echo "Tag ${TAG} already exists. Version ${VERSION} is already published or tagged."
+              echo "Tag ${TAG} already exists or version ${VERSION} is already published on PyPI."
               echo "should_publish=false" >> "$GITHUB_OUTPUT"
               echo "create_release=false" >> "$GITHUB_OUTPUT"
             elif gh release view "${TAG}" >/tmp/gh_release_out 2>/tmp/gh_release_err; then

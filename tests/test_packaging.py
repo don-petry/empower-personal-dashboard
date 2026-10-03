@@ -123,12 +123,12 @@ class TestPackaging(unittest.TestCase):
         from scripts.pypi_onboard import _project_version_from_text
 
         toml_text = (
-            '[tool.some_tool]\n'
+            '[tool.some_tool]  # config\n'
             'version = "9.9.9"\n'
             '\n'
-            '[project]\n'
+            '[project]  # project metadata\n'
             'name = "demo"\n'
-            'version = "1.2.3"\n'
+            'version = "1.2.3"  # semver version\n'
             '\n'
             '[tool.other]\n'
             'version = "0.0.0"\n'
@@ -144,6 +144,37 @@ class TestPackaging(unittest.TestCase):
         self.assertTrue(should_release_version("0.1.3", existing))
         self.assertFalse(should_release_version("", existing))
         self.assertFalse(should_release_version("0.1.0", ["0.1.0"]))
+
+    def test_should_release_version_with_pypi_check(self):
+        from scripts.pypi_onboard import should_release_version
+
+        with patch("scripts.pypi_onboard.is_version_published_on_pypi", return_value=True):
+            # Version not in git tags, but already exists on PyPI
+            self.assertFalse(should_release_version("0.1.0", [], check_pypi=True))
+
+        with patch("scripts.pypi_onboard.is_version_published_on_pypi", return_value=False):
+            # Version not in git tags and not on PyPI
+            self.assertTrue(should_release_version("0.1.1", [], check_pypi=True))
+
+    def test_is_version_published_on_pypi(self):
+        from scripts.pypi_onboard import is_version_published_on_pypi
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.__enter__.return_value = mock_resp
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            self.assertTrue(is_version_published_on_pypi("empower-personal-dashboard", "0.1.0"))
+
+        mock_404 = urllib.error.HTTPError(
+            url="https://pypi.org/pypi/empower-personal-dashboard/0.1.1/json",
+            code=404,
+            msg="Not Found",
+            hdrs={},
+            fp=None,
+        )
+        with patch("urllib.request.urlopen", side_effect=mock_404):
+            self.assertFalse(is_version_published_on_pypi("empower-personal-dashboard", "0.1.1"))
+        self.assertFalse(is_version_published_on_pypi("empower-personal-dashboard", ""))
 
     def test_pypi_onboard_version_cli(self):
         import io
