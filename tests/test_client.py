@@ -287,6 +287,12 @@ class TestClientMockMode(unittest.TestCase):
         txs = client.fetch_transactions(start_date="2024-01-01")
         self.assertEqual(txs.start_date, "2024-01-01")
 
+    def test_mock_transactions_start_date_with_limit(self):
+        client = EmpowerDashboardClient(mock_mode=True)
+        txs_all = client.fetch_transactions()
+        txs_limited = client.fetch_transactions(limit=1)
+        self.assertEqual(txs_limited.start_date, txs_all.start_date)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -889,11 +889,11 @@ class EmpowerDashboardClient:
                 "category_name": "Groceries",
             },
         ]
-        if limit and limit > 0:
-            mock_txs = mock_txs[:limit]
-
         dates = [t.get("transaction_date") for t in mock_txs if t.get("transaction_date")]
         start = start_date or (min(dates) if dates else f"{datetime.now(timezone.utc).year}-01-01")
+
+        if limit and limit > 0:
+            mock_txs = mock_txs[:limit]
 
         money_in = sum(t["amount"] for t in mock_txs if t["is_cash_in"])
         money_out = sum(t["amount"] for t in mock_txs if t["is_cash_out"])
