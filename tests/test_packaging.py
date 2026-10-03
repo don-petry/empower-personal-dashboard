@@ -106,6 +106,58 @@ class TestPackaging(unittest.TestCase):
         self.assertIn("publish.yml", PENDING_PUBLISHER_HINT)
         self.assertIn("pypi", PENDING_PUBLISHER_HINT)
 
+    def test_get_package_version(self):
+        import tempfile
+        from scripts.pypi_onboard import get_package_version
+
+        content = PYPROJECT_PATH.read_text(encoding="utf-8")
+        expected_version = tomllib.loads(content)["project"]["version"]
+        self.assertEqual(get_package_version(), expected_version)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            custom_toml = Path(tmpdir) / "pyproject.toml"
+            custom_toml.write_text('[project]\nname = "test"\nversion = "1.2.3"\n', encoding="utf-8")
+            self.assertEqual(get_package_version(custom_toml), "1.2.3")
+
+    def test_project_version_from_text_scoped_to_project_section(self):
+        from scripts.pypi_onboard import _project_version_from_text
+
+        toml_text = (
+            '[tool.some_tool]\n'
+            'version = "9.9.9"\n'
+            '\n'
+            '[project]\n'
+            'name = "demo"\n'
+            'version = "1.2.3"\n'
+            '\n'
+            '[tool.other]\n'
+            'version = "0.0.0"\n'
+        )
+        self.assertEqual(_project_version_from_text(toml_text), "1.2.3")
+        self.assertEqual(_project_version_from_text('[tool.x]\nversion = "7.7.7"\n'), "")
+
+    def test_should_release_version(self):
+        from scripts.pypi_onboard import should_release_version
+
+        existing = ["v0.1.0", "v0.1.1", "v0.1.2"]
+        self.assertFalse(should_release_version("0.1.2", existing))
+        self.assertTrue(should_release_version("0.1.3", existing))
+        self.assertFalse(should_release_version("", existing))
+        self.assertFalse(should_release_version("0.1.0", ["0.1.0"]))
+
+    def test_pypi_onboard_version_cli(self):
+        import io
+        from scripts.pypi_onboard import main
+
+        content = PYPROJECT_PATH.read_text(encoding="utf-8")
+        expected_version = tomllib.loads(content)["project"]["version"]
+
+        buf = io.StringIO()
+        with patch("sys.stdout", buf):
+            code = main(["--version"])
+        self.assertEqual(code, 0)
+        self.assertEqual(buf.getvalue().strip(), expected_version)
+
     def test_publish_workflow_structure(self):
         self.assertTrue(PUBLISH_WORKFLOW.exists(), "publish.yml workflow must exist")
         text = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
@@ -114,14 +166,31 @@ class TestPackaging(unittest.TestCase):
         self.assertIn("release:", text)
         self.assertIn("workflow_dispatch:", text)
         self.assertIn("dry_run:", text)
+        self.assertIn("push:", text)
+        self.assertIn("branches: [main]", text)
 
         # Permissions
         self.assertIn("id-token: write", text)
         self.assertIn("contents: read", text)
+        self.assertIn("contents: write", text)
 
         # Environment
         self.assertIn("environment:", text)
         self.assertIn("name: pypi", text)
+
+        # Checkout credentials must not be persisted
+        self.assertIn("persist-credentials: false", text)
+
+        # Publication runs are serialized
+        self.assertIn("concurrency:", text)
+        self.assertIn("group: pypi-publish", text)
+
+        # Release events must match packaged version
+        self.assertIn("RELEASE_TAG", text)
+
+        # Build happens in a dedicated job passing artifacts
+        self.assertIn("upload-artifact", text)
+        self.assertIn("download-artifact", text)
 
         # Action pinning to commit SHAs (no naked @v1 or @v4)
         for line in text.splitlines():
