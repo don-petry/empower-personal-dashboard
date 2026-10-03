@@ -443,6 +443,37 @@ def _calculate_account_transaction_totals(
     return totals
 
 
+def _determine_opening_date(
+    transactions: Optional[DashboardTransactions] = None,
+    balances: Optional[DashboardBalances] = None,
+    opening_date: Optional[str] = None,
+) -> Optional[str]:
+    """Determine initial opening date for baseline holdings lots.
+
+    If an explicit opening_date is provided, use it. Otherwise, look for the earliest
+    transaction date and use min("2020-01-01", earliest_date). If no transactions exist
+    but balances exist, fallback to "2020-01-01".
+    """
+    if opening_date:
+        return opening_date
+
+    if transactions and transactions.transactions:
+        tx_dates = [
+            t.get("transaction_date") or t.get("date")
+            for t in transactions.transactions
+            if (t.get("transaction_date") or t.get("date"))
+        ]
+        if tx_dates:
+            earliest_tx = min(tx_dates)
+            return min("2020-01-01", str(earliest_tx))
+        return "2020-01-01"
+
+    if balances and balances.accounts:
+        return "2020-01-01"
+
+    return None
+
+
 class BeancountGenerator:
     """Generates Beancount directives and ledger files from Empower data models."""
 
@@ -458,6 +489,8 @@ class BeancountGenerator:
             'option "title" "Empower Personal Dashboard Ledger"\n'
             'option "operating_currency" "USD"\n\n'
             'plugin "beancount.plugins.auto_accounts"\n\n'
+            ';; Fava Web Dashboard Display Configuration\n'
+            '1970-01-01 custom "fava-option" "invert-income-liabilities-equity" "true"\n\n'
             'include "accounts.bean"\n'
             'include "balances.bean"\n'
             'include "holdings.bean"\n'
@@ -741,6 +774,7 @@ class BeancountGenerator:
         holdings: Optional[DashboardHoldings] = None,
         balances: Optional[DashboardBalances] = None,
         existing_content: Optional[str] = None,
+        opening_date: Optional[str] = None,
     ) -> str:
         """Generate investment positions with lot cost-basis and price tracking."""
         lines = [
@@ -753,13 +787,16 @@ class BeancountGenerator:
             return "".join(lines)
 
         as_of = holdings.as_of_date
-        # Date holdings snapshot transaction before the balance assertion date so Beancount's
-        # beginning-of-day balance assertion on as_of passes cleanly.
-        try:
-            d = datetime.date.fromisoformat(as_of)
-            lot_date = (d - datetime.timedelta(days=1)).isoformat()
-        except Exception:
-            lot_date = as_of
+        if opening_date:
+            lot_date = opening_date
+        else:
+            # Date holdings snapshot transaction before the balance assertion date so Beancount's
+            # beginning-of-day balance assertion on as_of passes cleanly.
+            try:
+                d = datetime.date.fromisoformat(as_of)
+                lot_date = (d - datetime.timedelta(days=1)).isoformat()
+            except Exception:
+                lot_date = as_of
 
         acct_lookup = _build_account_lookup(balances)
 
@@ -954,6 +991,7 @@ class BeancountGenerator:
         holdings: Optional[DashboardHoldings] = None,
         transactions: Optional[DashboardTransactions] = None,
         append: bool = True,
+        opening_date: Optional[str] = None,
     ) -> List[Path]:
         """Export complete modular ledger directory (main.bean, accounts.bean, etc.).
 
@@ -969,6 +1007,8 @@ class BeancountGenerator:
         def _verify_file_symlink(p: Path) -> None:
             if p.is_symlink():
                 raise ValueError(f"Refusing to write to symlinked ledger target: {p}")
+
+        effective_opening_date = _determine_opening_date(transactions, balances, opening_date)
 
         # 1. main.bean
         main_path = dest / "main.bean"
@@ -1000,7 +1040,16 @@ class BeancountGenerator:
         holdings_path = dest / "holdings.bean"
         _verify_file_symlink(holdings_path)
         existing_h_text = holdings_path.read_text(encoding="utf-8") if (holdings_path.exists() and append) else None
-        holdings_content = self.generate_holdings_bean(holdings, balances=balances, existing_content=existing_h_text) if holdings else ""
+        holdings_content = (
+            self.generate_holdings_bean(
+                holdings,
+                balances=balances,
+                existing_content=existing_h_text,
+                opening_date=effective_opening_date,
+            )
+            if holdings
+            else ""
+        )
         if holdings_path.exists() and append:
             if holdings_content:
                 body_start = holdings_content.find("\n\n")
@@ -1063,6 +1112,7 @@ class BeancountGenerator:
         holdings: Optional[DashboardHoldings] = None,
         transactions: Optional[DashboardTransactions] = None,
         append: bool = True,
+        opening_date: Optional[str] = None,
     ) -> Path:
         """Export directives into a single comprehensive .bean ledger file.
 
@@ -1073,6 +1123,8 @@ class BeancountGenerator:
         if target.is_symlink():
             raise ValueError(f"Refusing to write to symlinked target file: {target}")
         target.parent.mkdir(parents=True, exist_ok=True)
+
+        effective_opening_date = _determine_opening_date(transactions, balances, opening_date)
 
         if target.exists() and append:
             existing_content = target.read_text(encoding="utf-8")
@@ -1091,7 +1143,14 @@ class BeancountGenerator:
 
             # Append commodity holdings lots if available
             if holdings:
-                delta_chunks.append(self.generate_holdings_bean(holdings, balances=balances, existing_content=existing_content))
+                delta_chunks.append(
+                    self.generate_holdings_bean(
+                        holdings,
+                        balances=balances,
+                        existing_content=existing_content,
+                        opening_date=effective_opening_date,
+                    )
+                )
                 delta_chunks.append("\n")
 
             # Append price points
@@ -1130,9 +1189,11 @@ class BeancountGenerator:
             'option "title" "Empower Personal Dashboard Ledger"\n'
             'option "operating_currency" "USD"\n\n',
             'plugin "beancount.plugins.auto_accounts"\n\n',
+            ';; Fava Web Dashboard Display Configuration\n',
+            '1970-01-01 custom "fava-option" "invert-income-liabilities-equity" "true"\n\n',
             self.generate_accounts_bean(balances, holdings, transactions, include_pads=False),
             "\n",
-            self.generate_holdings_bean(holdings, balances=balances),
+            self.generate_holdings_bean(holdings, balances=balances, opening_date=effective_opening_date),
             "\n",
             self.generate_balances_bean(balances, holdings, transactions=transactions),
             "\n",

@@ -424,6 +424,23 @@ class TestBeancountGenerator(unittest.TestCase):
             self.assertIn("2026-10-01 price VTI 280.0000 USD", content)
             self.assertIn('2026-09-15 * "WHOLE FOODS MARKET"', content)
 
+    def test_generate_main_bean_contains_fava_option(self):
+        output = self.generator.generate_main_bean()
+        self.assertIn('1970-01-01 custom "fava-option" "invert-income-liabilities-equity" "true"', output)
+
+    def test_generate_holdings_bean_with_opening_date(self):
+        output = self.generator.generate_holdings_bean(self.synthetic_holdings, opening_date="2020-01-01")
+        self.assertIn('2020-01-01 * "Vanguard Portfolio Snapshot"', output)
+
+    def test_determine_opening_date_logic(self):
+        from empower_personal_dashboard.beancount import _determine_opening_date
+        # Explicit opening date takes priority
+        self.assertEqual(_determine_opening_date(self.synthetic_transactions, opening_date="2019-01-01"), "2019-01-01")
+        # With transactions, min("2020-01-01", min_tx) is returned
+        self.assertEqual(_determine_opening_date(self.synthetic_transactions), "2020-01-01")
+        # With balances only, "2020-01-01" is returned
+        self.assertEqual(_determine_opening_date(balances=self.synthetic_balances), "2020-01-01")
+
     def test_credit_card_types_slugify_as_liabilities(self):
         self.assertEqual(slugify_account_name("Chase", "Sapphire", "credit_card"), "Liabilities:Chase:Sapphire")
         self.assertEqual(slugify_account_name("Citi", "DoubleCash", "creditcard"), "Liabilities:Citi:DoubleCash")

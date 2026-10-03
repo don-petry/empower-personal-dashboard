@@ -172,6 +172,12 @@ def parse_args() -> argparse.Namespace:
         help="Explicitly append exported Beancount directives to an existing ledger file.",
     )
     parser.add_argument(
+        "--opening-date",
+        type=str,
+        default=None,
+        help="Baseline date for initial portfolio holdings lots (e.g. 2020-01-01).",
+    )
+    parser.add_argument(
         "--from-data-dir",
         "--input-dir",
         type=Path,
@@ -800,6 +806,7 @@ def main() -> int:
                         holdings=holdings_res,
                         transactions=transactions_res,
                         append=should_append,
+                        opening_date=args.opening_date,
                     )
                     action_msg = "appended to" if (out_target.exists() and should_append) else "saved to"
                     if not args.quiet:
@@ -811,6 +818,7 @@ def main() -> int:
                         holdings=holdings_res,
                         transactions=transactions_res,
                         append=should_append,
+                        opening_date=args.opening_date,
                     )
                     if not args.quiet:
                         print(f"[+] Beancount modular ledger ({len(created)} files) saved to: {out_target}", file=progress_file)
@@ -822,6 +830,7 @@ def main() -> int:
                     holdings=holdings_res,
                     transactions=transactions_res,
                     append=should_append,
+                    opening_date=args.opening_date,
                 )
                 if not args.quiet:
                     print(f"[+] Beancount modular ledger ({len(created)} files) saved to: {dest_dir}", file=progress_file)
@@ -864,7 +873,7 @@ def main() -> int:
             if balances_res or holdings_res:
                 output_parts.append(generator.generate_balances_bean(balances_res, holdings_res))
             if holdings_res:
-                output_parts.append(generator.generate_holdings_bean(holdings_res, balances=balances_res))
+                output_parts.append(generator.generate_holdings_bean(holdings_res, balances=balances_res, opening_date=args.opening_date))
                 output_parts.append(generator.generate_prices_bean(holdings_res))
             if transactions_res:
                 output_parts.append(generator.generate_transactions_bean(transactions_res, balances=balances_res))
