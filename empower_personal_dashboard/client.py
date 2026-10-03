@@ -55,7 +55,7 @@ class EmpowerDashboardClient:
         self,
         session_file: Optional[Union[str, Path]] = None,
         base_url: str = DEFAULT_BASE_URL,
-        timeout_seconds: int = 15,
+        timeout_seconds: int = 90,
         mock_mode: bool = False,
         debug: bool = False,
         log_file: Optional[Union[str, Path]] = None,

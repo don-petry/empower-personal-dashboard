@@ -250,6 +250,12 @@ def parse_args() -> argparse.Namespace:
         help="File path to write detailed debug logs.",
     )
     parser.add_argument(
+        "--timeout",
+        type=int,
+        default=90,
+        help="HTTP request timeout in seconds (default: 90).",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress console output, only writing files.",
@@ -553,6 +559,7 @@ def main() -> int:
     client = EmpowerDashboardClient(
         session_file=args.session_file,
         base_url=base_url or DEFAULT_BASE_URL,
+        timeout_seconds=args.timeout,
         mock_mode=args.sandbox,
         debug=args.debug,
         log_file=args.log_file,
