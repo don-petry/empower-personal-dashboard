@@ -1,6 +1,7 @@
 """Unit tests for packaging metadata, PyPI onboarding script, and publish workflow."""
 from __future__ import annotations
 
+import socket
 import unittest
 import urllib.error
 from pathlib import Path
@@ -167,6 +168,11 @@ class TestPackaging(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError):
                 should_release_version("0.1.1", [], check_pypi=True)
 
+        mock_timeout_url_err = urllib.error.URLError(socket.timeout("timed out"))
+        with patch("scripts.pypi_onboard.is_version_published_on_pypi", side_effect=mock_timeout_url_err):
+            with self.assertRaises(urllib.error.URLError):
+                should_release_version("0.1.1", [], check_pypi=True)
+
     def test_is_version_published_on_pypi(self):
         from scripts.pypi_onboard import is_version_published_on_pypi
 
@@ -198,8 +204,9 @@ class TestPackaging(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError):
                 is_version_published_on_pypi("empower-personal-dashboard", "0.1.1")
 
-        with patch("urllib.request.urlopen", side_effect=TimeoutError("Connection timed out")):
-            with self.assertRaises(TimeoutError):
+        mock_timeout_url_err = urllib.error.URLError(socket.timeout("timed out"))
+        with patch("urllib.request.urlopen", side_effect=mock_timeout_url_err):
+            with self.assertRaises(urllib.error.URLError):
                 is_version_published_on_pypi("empower-personal-dashboard", "0.1.1")
 
     def test_pypi_onboard_version_cli(self):
