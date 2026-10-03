@@ -156,6 +156,17 @@ class TestPackaging(unittest.TestCase):
             # Version not in git tags and not on PyPI
             self.assertTrue(should_release_version("0.1.1", [], check_pypi=True))
 
+        mock_500 = urllib.error.HTTPError(
+            url="https://pypi.org/pypi/empower-personal-dashboard/0.1.1/json",
+            code=500,
+            msg="Internal Server Error",
+            hdrs={},
+            fp=None,
+        )
+        with patch("scripts.pypi_onboard.is_version_published_on_pypi", side_effect=mock_500):
+            with self.assertRaises(urllib.error.HTTPError):
+                should_release_version("0.1.1", [], check_pypi=True)
+
     def test_is_version_published_on_pypi(self):
         from scripts.pypi_onboard import is_version_published_on_pypi
 
@@ -175,6 +186,21 @@ class TestPackaging(unittest.TestCase):
         with patch("urllib.request.urlopen", side_effect=mock_404):
             self.assertFalse(is_version_published_on_pypi("empower-personal-dashboard", "0.1.1"))
         self.assertFalse(is_version_published_on_pypi("empower-personal-dashboard", ""))
+
+        mock_500 = urllib.error.HTTPError(
+            url="https://pypi.org/pypi/empower-personal-dashboard/0.1.1/json",
+            code=500,
+            msg="Internal Server Error",
+            hdrs={},
+            fp=None,
+        )
+        with patch("urllib.request.urlopen", side_effect=mock_500):
+            with self.assertRaises(urllib.error.HTTPError):
+                is_version_published_on_pypi("empower-personal-dashboard", "0.1.1")
+
+        with patch("urllib.request.urlopen", side_effect=TimeoutError("Connection timed out")):
+            with self.assertRaises(TimeoutError):
+                is_version_published_on_pypi("empower-personal-dashboard", "0.1.1")
 
     def test_pypi_onboard_version_cli(self):
         import io

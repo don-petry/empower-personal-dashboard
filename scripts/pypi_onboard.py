@@ -94,9 +94,7 @@ def is_version_published_on_pypi(package_name: str = PACKAGE_NAME, version: str 
     except urllib.error.HTTPError as err:
         if err.code == 404:
             return False
-        return False
-    except Exception:
-        return False
+        raise
 
 
 def should_release_version(
