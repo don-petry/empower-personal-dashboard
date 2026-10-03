@@ -253,8 +253,8 @@ class TestClientDataParsing(unittest.TestCase):
         mock_post.return_value = mock_resp
 
         txs = self.client.fetch_transactions(start_date=None)
-        args, kwargs = mock_post.call_args
-        payload = kwargs.get("data", {})
+        _, kwargs = mock_post.call_args
+        payload = kwargs["data"]
         self.assertNotIn("startDate", payload)
         self.assertEqual(txs.start_date, "2018-05-12")
 
